@@ -1,0 +1,1095 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pokémon Flashcards</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        /* ================= BASE STYLES ================= */
+        body {
+            font-family: 'Arial Rounded MT Bold', 'Microsoft JhengHei', sans-serif;
+            background-color: #f2f2f2;
+            background-image: radial-gradient(#ffcb05 15%, transparent 16%), radial-gradient(#ffcb05 15%, transparent 16%);
+            background-size: 60px 60px;
+            background-position: 0 0, 30px 30px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+            overflow-x: hidden;
+        }
+
+        #setup-section, #end-section {
+            background: white;
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            text-align: center;
+            max-width: 650px; 
+            width: 100%;
+            border: 5px solid #3c5aa6;
+        }
+
+        #game-section, #end-section { display: none; }
+
+        /* ================= FLASHCARD UI ================= */
+        #game-section {
+			width: 100%; 
+			max-width: 1400px;
+			flex-direction: row; 
+			align-items: center; 
+			justify-content: center; 
+			gap: 15px; /* ⬅️ REDUCED from 50px to bring elements closer */
+			height: 90vh; 
+			padding: 30px 40px; 
+			box-sizing: border-box;
+			overflow: visible; 
+		}
+        .word-half { 
+			flex: 1; 
+			display: flex; 
+			flex-direction: column; 
+			align-items: center; 
+			justify-content: center;
+			max-width: 600px; 
+			height: 100%; 
+		}
+        .image-half { 
+			flex: 1; 
+			display: flex; 
+			justify-content: center; 
+			align-items: center; 
+			perspective: 1000px; 
+			height: 100%; 
+		}
+        
+        h1 { color: #cc0000; font-size: 32px; margin-bottom: 20px; text-shadow: 2px 2px 0px #ffcb05; }
+
+        .flashcard {
+			background-color: #fff; 
+			border: 8px solid #ffcb05; 
+			border-radius: 30px;
+			width: 100%; 
+			height: 40vh; /* 改用動態高度，取代原本寫死的 400px */
+			max-height: 400px; 
+			display: flex; 
+			align-items: center; 
+			justify-content: center;
+			margin: 20px 0; 
+			box-shadow: inset 0 -5px 15px rgba(0,0,0,0.1), 0 15px 30px rgba(0,0,0,0.2);
+		}
+        .word-display { 
+			font-size: min(8vw, 100px); /* 讓字體可以隨螢幕縮放 */
+			font-weight: bold; 
+			color: #333; 
+			text-align: center; 
+			line-height: 1.2; 
+		}
+
+        .card-wrapper {
+            position: relative; display: none; transform: rotateY(-8deg) rotateX(4deg);
+            transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            box-shadow: 0 25px 50px rgba(0,0,0,0.5), 0 0 30px rgba(255,203,5,0.4);
+            border-radius: 4.5% / 3.2%;
+        }
+        .card-wrapper img { 
+			display: block; 
+			max-height: 85vh; /* ⬅️ INCREASED from 80vh / 45vh to enlarge image size */
+			width: auto; 
+			border-radius: 4.5% / 3.2%; 
+		}
+        
+        .highlight-box {
+            position: absolute; border: 4px solid #ff0000; background-color: rgba(255, 255, 0, 0.4);
+            border-radius: 6px; pointer-events: none; display: none; animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.7); }
+            70% { box-shadow: 0 0 0 15px rgba(255, 0, 0, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0); }
+        }
+		
+		@keyframes hop {
+			0%, 100% { transform: translate(-50%, -50%); }
+			50% { transform: translate(-50%, calc(-50% - 10vmin)); } /* Shell hops up and over */
+		}
+
+		@keyframes dip {
+			0%, 100% { transform: translate(-50%, -50%); }
+			50% { transform: translate(-50%, calc(-50% + 3vmin)); } /* Shell dips slightly under */
+		}
+		
+		/* 🌀 The Capture Illusion Keyframes */
+		@keyframes captureEffect {
+			0%, 33.3% {
+				/* ✨ Card stays giant, clear, and firmly on top layer 30 */
+				transform: translate(-50%, -50%) scale(3.5);
+				opacity: 1;
+				filter: brightness(1) blur(0px);
+				z-index: 30; 
+			}
+			34% {
+				/* 📉 Drop the layer to 15 right as the shrink starts */
+				/* This pushes it behind the shell (20) but keeps it above the background */
+				z-index: 15;
+			}
+			66.6% {
+				transform: translate(-50%, -50%) scale(2);
+				opacity: 1;
+				filter: brightness(1.5) blur(2px);
+				z-index: 15;
+			}
+			100% {
+				transform: translate(-50%, -50%) scale(1);
+				opacity: 0;
+				filter: brightness(3) blur(8px);
+				z-index: 15;
+			}
+		}
+
+        .controls { display: flex; justify-content: space-between; align-items: center; width: 100%; margin-top: 20px; }
+        button {
+            background-color: #3c5aa6; color: white; border: none; padding: 15px 30px;
+            font-size: 24px; border-radius: 15px; cursor: pointer; font-weight: bold;
+            box-shadow: 0 5px 0 #2a4178; user-select: none;
+        }
+        button:active { box-shadow: 0 0 0 #2a4178; transform: translateY(5px); }
+        button:disabled { background-color: #ccc; box-shadow: 0 5px 0 #999; cursor: not-allowed; }
+        #counter { font-size: 28px; font-weight: bold; color: #333; text-shadow: 2px 2px 0px white;}
+
+        .diff-buttons { display: flex; gap: 15px; justify-content: center; flex-wrap: wrap; margin-top: 20px; }
+        .diff-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 160px; height: 100px; font-size: 24px; line-height: 1.4; transition: transform 0.2s; }
+        .diff-btn:hover { transform: scale(1.05); }
+        .diff-btn span { font-size: 14px; font-weight: normal; }
+
+        input[type="file"] { font-size: 16px; padding: 10px; margin-bottom: 20px; margin-top: 10px; border: 2px dashed #ccc; border-radius: 10px; width: 80%; cursor: pointer; }
+
+        @media (orientation: portrait) {
+			#game-section { 
+				flex-direction: column; /* 垂直排列 */
+				gap: 5px; 
+				height: 95vh; /* 佔滿畫面高度 */
+			}
+
+			/* 1. 將圖片區塊移到最上方 */
+			.image-half { 
+				order: 1; 
+				max-height: 55vh; /* 限制圖片區塊高度，讓出空間給下方 */
+			}
+			.card-wrapper img { 
+				max-height: 55vh; /* 確保圖片不超出區域 */
+			}
+
+			/* 2. 將字卡與按鈕移到下方 */
+			.word-half { 
+				order: 2; 
+				justify-content: flex-end; /* 將內容往下推 */
+				max-height: 35vh;
+			}
+
+			/* 縮小標題，節省垂直空間 */
+			.word-half h2 {
+				font-size: 22px !important;
+				margin: 0;
+			}
+
+			/* 3. 大幅縮小字卡高度，確保整體畫面不溢出 */
+			.flashcard { 
+				height: 20vh; 
+				min-height: 120px;
+				margin: 10px 0;
+				border-width: 5px;
+			}
+
+			.word-display { 
+				font-size: 60px; /* 在手機版縮小字體 */
+			}
+
+			/* 縮小按鈕大小，確保按鈕區塊完美塞入畫面底部 */
+			.controls { 
+				margin-top: 10px; 
+			}
+			.controls button { 
+				padding: 12px 20px; 
+				font-size: 20px; 
+			}
+			#counter { 
+				font-size: 22px; 
+			}
+		}
+
+        /* ================= MINIGAME SHARED CONTAINER ================= */
+        #minigame-section {
+            display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            width: 100vw; height: 100vh;
+            background-color: #f2f2f2;
+            background-image: radial-gradient(#ffcb05 15%, transparent 16%), radial-gradient(#ffcb05 15%, transparent 16%);
+            background-size: 60px 60px; background-position: 0 0, 30px 30px;
+            flex-direction: column; align-items: center; padding: 2vh 2vw; box-sizing: border-box;
+            z-index: 999; overflow: hidden; 
+        }
+
+        .sub-game-container {
+            width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; display: none;
+        }
+        
+        .minigame-header-style {
+            display: flex; justify-content: center; align-items: center; width: 100%; max-width: 1200px;
+            height: 10vh; min-height: 60px; margin-bottom: 2vh; flex-shrink: 0; background: white;
+            border-radius: 20px; border: 4px solid #3c5aa6; box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+        .minigame-header-style h2 { color: #cc0000; font-size: 32px; margin: 0; }
+
+        #minigame-overlay {
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(255,255,255,0.95); display: flex; flex-direction: column;
+            align-items: center; justify-content: center; z-index: 1000; display: none;
+        }
+		
+		/* ⬅️ 新增這段 CSS */
+		.skip-btn {
+			position: absolute;
+			top: 20px;
+			right: 20px;
+			background-color: #999;
+			color: white;
+			padding: 10px 20px;
+			font-size: 18px;
+			border-radius: 10px;
+			z-index: 1001; /* 確保它顯示在最上層，甚至高於過關結算畫面 */
+			box-shadow: 0 4px 0 #666;
+			border: none;
+			cursor: pointer;
+			font-weight: bold;
+		}
+		.skip-btn:active {
+			box-shadow: 0 0 0 #666;
+			transform: translateY(4px);
+		}
+
+        /* ================= GAME 1: MEMORY GAME CSS ================= */
+        #memory-header {
+            display: flex; justify-content: space-between; align-items: center; width: 100%;
+            max-width: 1200px; height: 8vh; min-height: 50px; margin-bottom: 1vh; flex-shrink: 0;
+        }
+        #timer { font-size: 28px; font-weight: bold; color: #cc0000; }
+
+        .memory-grid {
+            display: grid; gap: 1.5vmin; width: 100%; max-width: 1400px; flex-grow: 1; min-height: 0;
+            justify-content: center; align-content: center;
+        }
+        @media (orientation: portrait) {
+            .memory-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: repeat(4, minmax(0, 1fr)); }
+        }
+        @media (orientation: landscape) {
+            .memory-grid { grid-template-columns: repeat(12, minmax(0, 1fr)); grid-template-rows: repeat(3, minmax(0, 1fr)); }
+            .memory-card { grid-column: span 2; }
+            .memory-card:nth-child(1) { grid-column: 2 / span 2; }
+            .memory-card:nth-child(12) { grid-column: 2 / span 2; }
+        }
+        .memory-card {
+            aspect-ratio: 63 / 88; width: 100%; height: 100%; max-width: 100%; max-height: 100%; margin: auto;
+            position: relative; cursor: pointer; transform-style: preserve-3d; transition: transform 0.4s;
+        }
+        .memory-card.flip { transform: rotateY(180deg); }
+        .card-front, .card-back {
+            width: 100%; height: 100%; position: absolute; backface-visibility: hidden;
+            border-radius: 4.5% / 3.2%; box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        .card-front { transform: rotateY(180deg); background-color: white; border: 2px solid #ffcb05; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+        .card-front img { width: 100%; height: 100%; object-fit: cover; border-radius: 4.5% / 3.2%; }
+        .card-back {
+            background-color: #3c5aa6; border: 2px solid #ffcb05; display: flex; align-items: center; justify-content: center;
+            background-image: repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255,255,255,0.1) 10px, rgba(255,255,255,0.1) 20px);
+        }
+        .card-back::after {
+            content: ""; width: 40px; height: 40px; background: radial-gradient(circle, white 35%, black 35%, black 45%, transparent 45%);
+            background-color: white; border-radius: 50%; border: 4px solid black; box-shadow: inset 0 20px 0 #cc0000;
+        }
+
+        /* ================= GAME 2: SILHOUETTE GAME CSS ================= */
+        .silhouette-arena {
+			flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%;
+		}
+        .silhouette-img-wrapper {
+			position: relative; 
+			height: 40vh; /* 根據螢幕高度動態調整，確保按鈕不會被擠出畫面 */
+			aspect-ratio: 1.6; /* 鎖定為寶可夢卡牌插圖的標準黃金比例 */
+			overflow: hidden; /* 這是裁切的關鍵：超出的卡片文字與數值都會被隱藏 */
+			margin-bottom: 25px;
+			box-shadow: 0 20px 40px rgba(0,0,0,0.4); 
+			border-radius: 12px;
+			border: 5px solid #ffcb05;
+			background-color: #3c5aa6;
+			padding: 0; /* 移除原本的 padding，讓插圖完全貼齊邊緣 */
+		}
+        #silhouette-img {
+			position: absolute;
+			display: block;
+			width: 115%; /* 稍微放大卡片，剛好裁切掉左右兩側多餘的卡片邊框 */
+			max-height: none; /* 移除舊有的高度限制 */
+			
+			/* 精準對齊插圖區域：將卡片往上拉，只露出上半部的插圖 */
+			left: 50%;
+			top: 31.5%; 
+			transform: translate(-50%, -22%);
+			
+			transition: filter 1s ease-in-out;
+			border-radius: 0;
+		}
+		.is-silhouette {
+			filter: grayscale(100%) invert(100%) contrast(300%) brightness(0.8) sepia(100%) hue-rotate(180deg) saturate(400%);
+		}
+        .silhouette-options {
+            display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; width: 100%; max-width: 900px;
+        }
+        .silhouette-btn {
+            background-color: white; color: #333; border: 5px solid #3c5aa6; padding: 20px 40px;
+            font-size: 32px; border-radius: 20px; cursor: pointer; font-weight: bold;
+            box-shadow: 0 8px 0 #2a4178; transition: transform 0.1s, background-color 0.3s;
+            flex: 1; min-width: 250px;
+        }
+        .silhouette-btn:active { transform: translateY(8px); box-shadow: 0 0 0 #2a4178; }
+
+        /* ================= GAME 3: SHELL GAME CSS ================= */
+        .shell-arena { position: relative; width: 100%; max-width: 1000px; flex-grow: 1; display: flex; align-items: center; justify-content: center; }
+        .shell::before { content: ""; position: absolute; top: 50%; left: 0; right: 0; height: 8%; background: #222; transform: translateY(-50%); }
+        .shell::after { content: ""; position: absolute; top: 50%; left: 50%; width: 25%; height: 25%; background: radial-gradient(circle, #fff 40%, #ccc 100%); border: 5px solid #222; border-radius: 50%; transform: translate(-50%, -50%); box-shadow: inset 0 -2px 5px rgba(0,0,0,0.2); }
+        .shell.lift { transform: translate(-50%, calc(-50% - 25vmin)); }
+		.hidden-card {
+			position: absolute; top: 50%; transform: translate(-50%, -50%); width: 15vmin; max-width: 220px;
+			aspect-ratio: 0.71; z-index: 30; display: none; border-radius: 5%; box-shadow: 0 10px 20px rgba(0,0,0,0.3);
+		}
+		.hidden-card.capture-mode {
+			animation: captureEffect 3s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+		}
+		.hidden-card img { width: 100%; height: 100%; object-fit: cover; border-radius: 5%; }
+        .shell {
+			position: absolute; top: 50%; transform: translate(-50%, -50%); width: 35vmin; height: 35vmin;
+			max-width: 320px; max-height: 320px; border-radius: 50%; border: 6px solid #222; cursor: pointer; z-index: 20;
+			
+			background: linear-gradient(to bottom, #ff0000 50%, #ffffff 50%);
+			
+			box-shadow: 0 20px 30px rgba(0,0,0,0.4), inset -10px -10px 20px rgba(0,0,0,0.15);
+			transition: left 0.5s ease-in-out, transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+		}
+		/* 🔥 When revealing, cancel the capture animation and lock size to its base 220px max */
+		.hidden-card.reveal-mode {
+			animation: none !important;
+			transform: translate(-50%, -50%) scale(1) !important;
+			opacity: 1 !important;
+			filter: none !important;
+			z-index: 10; /* Sits behind the lifted shell top piece cleanly */
+		}
+		
+		/* ================= IMAGE VIEWER OVERLAY ================= */
+		#image-viewer-overlay {
+			display: none; 
+			position: fixed; 
+			top: 0; left: 0; right: 0; bottom: 0;
+			background-color: rgba(0, 0, 0, 0.9);
+			z-index: 10005; /* 確保位於最頂層 */
+			align-items: center;
+			justify-content: center;
+			overflow: auto; /* 允許縮放後滑動查看 */
+		}
+
+		#image-viewer-overlay img {
+			max-width: 100vw;
+			max-height: 100vh;
+			object-fit: contain;
+		}
+
+		#close-viewer-btn {
+			position: fixed;
+			top: 20px;
+			right: 20px;
+			
+			/* 🔴 Completely stripped background, borders, and shadows */
+			background: transparent;
+			border: none;
+			box-shadow: none;
+			padding: 0;
+			
+			/* ⚪ Pure white "X" character */
+			color: #fff; 
+			font-size: 28px; /* Slightly increased to keep it easily clickable */
+			font-weight: bold;
+			cursor: pointer;
+			z-index: 10006;
+			
+			/* 🎯 Ensures clean layout alignment */
+			line-height: 1;
+		}
+		
+		#reference-card {
+			cursor: zoom-in;
+		}
+
+		/* 保護遊戲操作區域，避免雙擊或手指誤觸造成畫面縮放 */
+		#minigame-section, .controls button, .diff-btn, #end-section {
+			touch-action: manipulation;
+		}
+
+    </style>
+</head>
+<body>
+
+    <div id="setup-section">
+        <h1>寶可夢字卡遊戲<br>Pokémon Flashcards</h1>
+        <div id="manual-upload-ui" style="display: none;">
+            <p style="font-size: 18px; color: #555;">請選擇字卡檔案 (Select Excel File):</p>
+            <input type="file" id="file-upload" accept=".xlsx, .xls">
+        </div>
+        <p id="loading-text" style="font-size: 20px; display: none;">檔案載入中... (Loading file...)</p>
+        
+        <div id="difficulty-selection" style="display: none;">
+            <h2 style="color: #333; margin-top: 10px;">請選擇難度 (Select Difficulty)</h2>
+            <div class="diff-buttons">
+                <button class="diff-btn" data-min="1" data-max="2" style="background-color: #4CAF50; box-shadow: 0 5px 0 #388E3C;">簡單<br><span>Easy</span></button>
+                <button class="diff-btn" data-min="3" data-max="4" style="background-color: #FF9800; box-shadow: 0 5px 0 #F57C00;">普通<br><span>Normal</span></button>
+                <button class="diff-btn" data-min="5" data-max="6" style="background-color: #F44336; box-shadow: 0 5px 0 #D32F2F;">困難<br><span>Hard</span></button>
+            </div>
+        </div>
+        <p id="setup-error" style="color: red; font-weight: bold; margin-top: 15px; font-size: 16px;"></p>
+    </div>
+
+    <div id="game-section">
+        <div class="word-half">
+            <h2 style="color: #3c5aa6; margin:0; text-shadow: 2px 2px 0px white; font-size: 32px;">讀讀看這個詞！</h2>
+            <div class="flashcard">
+                <div id="word-display" class="word-display">載入中...</div>
+            </div>
+            <div class="controls">
+                <button id="btn-prev">⬅️ 上一個</button>
+                <div id="counter">1 / 50</div>
+                <button id="btn-next">下一個 ➡️</button>
+            </div>
+        </div>
+        <div class="image-half">
+            <div id="card-wrapper" class="card-wrapper">
+                <img id="reference-card" src="" alt="Pokemon Card">
+                <div id="highlight-box" class="highlight-box"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="minigame-section">
+		<!-- ⬅️ 新增這行：跳過遊戲按鈕 -->
+		<button id="btn-skip-minigame" class="skip-btn">跳過 (Skip) ⏭️</button>
+        
+        <div id="memory-container" class="sub-game-container">
+            <div id="memory-header">
+                <h2 style="color: #3c5aa6; margin:0;">挑戰時間！找找看配對</h2>
+                <div id="timer">60s</div>
+            </div>
+            <div class="memory-grid" id="memory-grid"></div>
+        </div>
+
+        <div id="silhouette-container" class="sub-game-container">
+            <div class="minigame-header-style">
+                <h2 id="silhouette-title">猜猜看是哪個詞語？ (Round 1/3)</h2>
+            </div>
+            <div class="silhouette-arena">
+                <div class="silhouette-img-wrapper">
+                    <img id="silhouette-img" src="">
+                </div>
+                <div class="silhouette-options" id="silhouette-options">
+                    </div>
+            </div>
+        </div>
+
+        <div id="shell-container" class="sub-game-container">
+            <div class="minigame-header-style">
+                <h2 id="shell-title">卡牌藏在哪裡？ (Round 1/3)</h2>
+            </div>
+            <div class="shell-arena" id="shell-arena">
+                <div class="hidden-card" id="hidden-card"><img src="" id="shell-card-img"></div>
+                <div class="shell" id="shell-0" data-id="0"></div>
+                <div class="shell" id="shell-1" data-id="1"></div>
+                <div class="shell" id="shell-2" data-id="2"></div>
+            </div>
+        </div>
+        
+        <div id="minigame-overlay">
+            <h1 id="overlay-msg" style="color: #cc0000; font-size: 40px; text-align:center;"></h1>
+            <button id="btn-next-round" style="background-color: #3c5aa6; display: none;">下一關 (Next Round)</button>
+            <button id="btn-retry-minigame" style="background-color: #FF9800; display: none;">再試一次 (Try Again)</button>
+            <button id="btn-continue-flashcards" style="background-color: #4CAF50; display: none; margin-top: 15px;">繼續字卡 (Continue)</button>
+        </div>
+    </div>
+
+    <div id="end-section">
+        <h1>太棒了！<br>You did it! 🎉</h1>
+        <button onclick="location.reload()" style="background-color: #4CAF50;">再來一次</button>
+    </div>
+	
+	<div id="image-viewer-overlay">
+		<button id="close-viewer-btn">X</button>
+		<img id="viewer-image" src="" alt="Enlarged Card">
+	</div>
+
+    <script>
+        // ================= CONFIGURATION =================
+        const isOnline = true; 
+        let fullRawData = null; 
+        let flashcardData = [];
+        let currentIndex = 0;
+        let milestonesReached = new Set(); 
+
+        // MINIGAME ROUTER VARIABLES (Now includes Silhouette!)
+        let miniGames = ['memory', 'silhouette', 'shuffle']; 
+		//let miniGames = ['silhouette'];
+        let gameIndex = 0; 
+        let activeMiniGame = ''; 
+
+        // DOM Elements
+        const setupSection = document.getElementById('setup-section');
+        const manualUploadUI = document.getElementById('manual-upload-ui');
+        const fileUpload = document.getElementById('file-upload');
+        const loadingText = document.getElementById('loading-text');
+        const difficultySelection = document.getElementById('difficulty-selection');
+        const setupError = document.getElementById('setup-error');
+        const gameSection = document.getElementById('game-section');
+        const wordDisplay = document.getElementById('word-display');
+        const cardWrapper = document.getElementById('card-wrapper');
+        const cardImage = document.getElementById('reference-card');
+        const highlightBox = document.getElementById('highlight-box');
+        const counterDisplay = document.getElementById('counter');
+        const btnPrev = document.getElementById('btn-prev');
+        const btnNext = document.getElementById('btn-next');
+
+        const minigameSection = document.getElementById('minigame-section');
+        const memoryContainer = document.getElementById('memory-container');
+        const silhouetteContainer = document.getElementById('silhouette-container');
+        const shellContainer = document.getElementById('shell-container');
+        const overlay = document.getElementById('minigame-overlay');
+        const overlayMsg = document.getElementById('overlay-msg');
+        const btnNextRound = document.getElementById('btn-next-round');
+        const btnRetryMini = document.getElementById('btn-retry-minigame');
+        const btnContinueFlashcards = document.getElementById('btn-continue-flashcards');
+		
+		const btnSkipMinigame = document.getElementById('btn-skip-minigame');
+
+        // ================= SETUP LOGIC =================
+        document.addEventListener('DOMContentLoaded', () => {
+            if (isOnline) {
+                loadingText.style.display = 'block';
+                fetch('./pokemon_flashcards_ocr_master.xlsx')
+                    .then(response => { if (!response.ok) throw new Error('Not found'); return response.arrayBuffer(); })
+                    .then(data => { parseExcelData(data); })
+                    .catch(() => { setupError.innerHTML = "⚠️ 無法載入檔案 (Cannot auto-load file)."; loadingText.style.display = 'none'; });
+            } else {
+                manualUploadUI.style.display = 'block';
+                fileUpload.addEventListener('change', (e) => {
+                    const file = e.target.files[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = function(event) {
+                        try { parseExcelData(event.target.result); } 
+                        catch (err) { setupError.innerHTML = "⚠️ 檔案解析錯誤 (Error parsing file)."; }
+                    };
+                    reader.readAsArrayBuffer(file);
+                });
+            }
+        });
+
+        function parseExcelData(buffer) {
+            const workbook = XLSX.read(new Uint8Array(buffer), { type: 'array' });
+            const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+            fullRawData = XLSX.utils.sheet_to_json(worksheet);
+            manualUploadUI.style.display = 'none';
+            loadingText.style.display = 'none';
+            difficultySelection.style.display = 'block';
+        }
+
+        document.querySelectorAll('.diff-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                processWords(parseInt(btn.getAttribute('data-min')), parseInt(btn.getAttribute('data-max')));
+            });
+        });
+
+        function processWords(minLvl, maxLvl) {
+			let itemsList = fullRawData.map(row => {
+				const level = parseInt(row['Level']);
+				if (isNaN(level) || level < minLvl || level > maxLvl) return null; 
+
+				const ocrData = row['OCR Image Data'] || "";
+				const cardNameData = row['Card Name'] || ""; // ⬅️ 取得新增的 Card Name 欄位
+				
+				const matchOptions = ocrData.split(';;').filter(Boolean);
+				const cardNameOptions = cardNameData.split(';;').filter(Boolean);
+				
+				let chosenIndex = matchOptions.length > 0 ? Math.floor(Math.random() * matchOptions.length) : -1;
+				let chosenMatch = chosenIndex !== -1 ? matchOptions[chosenIndex] : "";
+				let chosenCardName = (chosenIndex !== -1 && chosenIndex < cardNameOptions.length) ? cardNameOptions[chosenIndex] : "";
+				
+				const parts = chosenMatch.split('|');
+				let imagePath = "";
+				let highlight = null;
+				if (parts.length >= 5) {
+					imagePath = parts[0];
+					if (!imagePath.startsWith("card_images/")) imagePath = "card_images/" + imagePath;
+					highlight = { x: parseFloat(parts[1]), y: parseFloat(parts[2]), w: parseFloat(parts[3]), h: parseFloat(parts[4]) };
+				}
+				
+				// ⬅️ 解析出寶可夢名稱 (Card Type | Pokemon Name)
+				let pokemonName = "未知寶可夢";
+				if (chosenCardName) {
+					const cnParts = chosenCardName.split('|');
+					pokemonName = cnParts.length > 1 ? cnParts[1].trim() : cnParts[0].trim();
+				}
+
+				// 將 pokemonName 一併存入物件中
+				return { word: row['Word'], image: imagePath, highlight: highlight, pokemonName: pokemonName };
+			}).filter(item => item !== null && item.word && item.image !== "");
+
+			if (itemsList.length === 0) { setupError.innerHTML = "⚠️ 找不到符合此難度的字卡."; return; }
+
+			for (let i = itemsList.length - 1; i > 0; i--) {
+				const j = Math.floor(Math.random() * (i + 1));
+				[itemsList[i], itemsList[j]] = [itemsList[j], itemsList[i]];
+			}
+
+			flashcardData = itemsList.slice(0, 50);
+			setupSection.style.display = 'none';
+			gameSection.style.display = 'flex'; 
+			currentIndex = 0;
+			milestonesReached.clear();
+			updateCard();
+		}
+
+        function updateCard() {
+            const currentItem = flashcardData[currentIndex];
+            wordDisplay.textContent = currentItem.word;
+            cardImage.style.visibility = 'hidden';
+            highlightBox.style.display = 'none';
+            
+            if (currentItem.image) {
+                cardWrapper.style.display = 'block';
+                cardImage.onload = function() {
+                    cardImage.style.visibility = 'visible';
+                    if (currentItem.highlight && currentItem.highlight.w > 0) {
+                        highlightBox.style.left = currentItem.highlight.x + '%';
+                        highlightBox.style.top = currentItem.highlight.y + '%';
+                        highlightBox.style.width = (currentItem.highlight.w + 1) + '%';
+                        highlightBox.style.height = (currentItem.highlight.h + 1) + '%';
+                        highlightBox.style.display = 'block';
+                    }
+                };
+                cardImage.src = encodeURI(currentItem.image.replace(/\\/g, '/'));
+            } else {
+                cardWrapper.style.display = 'none';
+            }
+            counterDisplay.textContent = `${currentIndex + 1} / ${flashcardData.length}`;
+            btnPrev.disabled = currentIndex === 0;
+        }
+
+        // ================= MASTER MINIGAME ROUTER =================
+        btnNext.addEventListener('click', () => {
+            if (currentIndex < flashcardData.length - 1) {
+                currentIndex++;
+                
+                if (currentIndex % 10 === 0 && !milestonesReached.has(currentIndex)) {
+                    milestonesReached.add(currentIndex);
+                    gameSection.style.display = 'none';
+                    
+                    // Route to the next game in the sequence
+                    //activeMiniGame = miniGames[gameIndex % miniGames.length];
+                    //gameIndex++;
+					
+					gameIndex = Math.floor(Math.random() * miniGames.length);
+					activeMiniGame = miniGames[gameIndex];
+                    launchMiniGame(activeMiniGame);
+					miniGames.splice(gameIndex,1)
+					
+                } else {
+                    updateCard();
+                }
+            } else {
+                gameSection.style.display = 'none';
+                document.getElementById('end-section').style.display = 'block';
+            }
+        });
+
+        btnPrev.addEventListener('click', () => {
+            if (currentIndex > 0) { currentIndex--; updateCard(); }
+        });
+
+        function launchMiniGame(type) {
+            minigameSection.style.display = 'flex';
+            memoryContainer.style.display = 'none';
+            silhouetteContainer.style.display = 'none';
+            shellContainer.style.display = 'none';
+            overlay.style.display = 'none';
+
+            if (type === 'memory') {
+                memoryContainer.style.display = 'flex';
+                initMemoryGame();
+            } else if (type === 'silhouette') {
+                silhouetteContainer.style.display = 'flex';
+                startSilhouetteGame();
+            } else if (type === 'shuffle') {
+                shellContainer.style.display = 'flex';
+                startShellGame();
+            }
+        }
+
+        function showOverlay(msg, color, state) {
+            overlay.style.display = 'flex';
+            overlayMsg.textContent = msg;
+            overlayMsg.style.color = color;
+            btnNextRound.style.display = state === "next" ? 'block' : 'none';
+            btnRetryMini.style.display = state === "lose" ? 'block' : 'none';
+            btnContinueFlashcards.style.display = state === "win" ? 'block' : 'none';
+        }
+
+        btnRetryMini.addEventListener('click', () => {
+            if (activeMiniGame === 'memory') initMemoryGame();
+            else if (activeMiniGame === 'silhouette') startSilhouetteGame(); // Restart Silhouette logic
+            else if (activeMiniGame === 'shuffle') startShellGame();
+        });
+
+        btnContinueFlashcards.addEventListener('click', () => {
+            minigameSection.style.display = 'none';
+            gameSection.style.display = 'flex';
+            updateCard();
+        });
+
+        // Add Next Round Listener (Used by Shell Game & Silhouette)
+        btnNextRound.addEventListener('click', () => {
+            if (activeMiniGame === 'shell' || activeMiniGame === 'shuffle') {
+                shellCurrentRound++;
+                setupShellRound();
+            } else if (activeMiniGame === 'silhouette') {
+                silhouetteRound++;
+                setupSilhouetteRound();
+            }
+        });
+
+        const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+		
+		btnSkipMinigame.addEventListener('click', () => {
+			// 清除記憶遊戲的計時器，防止在背景執行
+			if (timerInterval) clearInterval(timerInterval);
+			
+			// 解除貝殼遊戲的鎖定狀態
+			isShuffling = false; 
+
+			// 隱藏遊戲區塊與任何開啟的結算畫面
+			document.getElementById('minigame-overlay').style.display = 'none';
+			document.getElementById('minigame-section').style.display = 'none';
+			
+			// 顯示字卡區塊並載入下一張
+			document.getElementById('game-section').style.display = 'flex';
+			updateCard();
+		});
+
+        // ================= GAME 1: MEMORY MATCH =================
+        const memoryGrid = document.getElementById('memory-grid');
+        const timerDisplay = document.getElementById('timer');
+        let hasFlippedCard = false, lockBoard = false, firstCard, secondCard;
+        let matchedPairs = 0, timeRemaining = 60, timerInterval;
+
+        function initMemoryGame() {
+            overlay.style.display = 'none';
+            memoryGrid.innerHTML = '';
+            matchedPairs = 0; timeRemaining = 60;
+            timerDisplay.textContent = `${timeRemaining}s`;
+            timerDisplay.style.color = '#cc0000';
+            [hasFlippedCard, lockBoard, firstCard, secondCard] = [false, false, null, null];
+            
+            let uniqueImages = new Set();
+            fullRawData.forEach(row => {
+                const parts = (row['OCR Image Data'] || "").split(';;')[0]?.split('|');
+                if (parts && parts.length >= 5) {
+                    let img = parts[0];
+                    if (!img.startsWith("card_images/")) img = "card_images/" + img;
+                    uniqueImages.add(img);
+                }
+            });
+
+            let imgArray = Array.from(uniqueImages);
+            for (let i = imgArray.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [imgArray[i], imgArray[j]] = [imgArray[j], imgArray[i]]; }
+            
+            let selectedImages = imgArray.slice(0, 8);
+            while (selectedImages.length < 8) { selectedImages.push(imgArray[selectedImages.length % imgArray.length] || ""); }
+            let gameDeck = [...selectedImages, ...selectedImages];
+            
+            for (let i = gameDeck.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [gameDeck[i], gameDeck[j]] = [gameDeck[j], gameDeck[i]]; }
+
+            gameDeck.forEach(imgPath => {
+                const card = document.createElement('div'); card.classList.add('memory-card'); card.dataset.image = imgPath;
+                card.innerHTML = `<div class="card-front"><img src="${encodeURI(imgPath.replace(/\\/g, '/'))}"></div><div class="card-back"></div>`;
+                card.addEventListener('click', flipCard);
+                memoryGrid.appendChild(card);
+            });
+
+            clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                timeRemaining--; timerDisplay.textContent = `${timeRemaining}s`;
+                if (timeRemaining <= 10) timerDisplay.style.color = 'red';
+                if (timeRemaining <= 0) { clearInterval(timerInterval); showOverlay("時間到！再試一次", "#cc0000", "lose"); }
+            }, 1000);
+        }
+
+        function flipCard() {
+            if (lockBoard || this === firstCard) return;
+            this.classList.add('flip');
+            if (!hasFlippedCard) { hasFlippedCard = true; firstCard = this; return; }
+            secondCard = this;
+            firstCard.dataset.image === secondCard.dataset.image ? disableCards() : unflipCards();
+        }
+
+        function disableCards() {
+            firstCard.removeEventListener('click', flipCard); secondCard.removeEventListener('click', flipCard);
+            matchedPairs++; [hasFlippedCard, lockBoard, firstCard, secondCard] = [false, false, null, null];
+            if (matchedPairs === 8) { clearInterval(timerInterval); setTimeout(() => showOverlay("太棒了！挑戰成功 🎉", "#4CAF50", "win"), 500); }
+        }
+
+        function unflipCards() {
+            lockBoard = true;
+            setTimeout(() => { firstCard.classList.remove('flip'); secondCard.classList.remove('flip'); [hasFlippedCard, lockBoard, firstCard, secondCard] = [false, false, null, null]; }, 1000);
+        }
+
+
+        // ================= GAME 2: SILHOUETTE (WHO'S THAT POKEMON) =================
+        const silhouetteTitle = document.getElementById('silhouette-title');
+        const silhouetteImg = document.getElementById('silhouette-img');
+        const silhouetteOptions = document.getElementById('silhouette-options');
+        let silhouetteRound = 1;
+        let currentSilhouetteTarget = null;
+
+        function startSilhouetteGame() {
+            silhouetteRound = 1;
+            setupSilhouetteRound();
+        }
+
+        function setupSilhouetteRound() {
+			overlay.style.display = 'none';
+			silhouetteTitle.textContent = `猜猜看是哪個寶可夢？ (Round ${silhouetteRound}/5)`; // ⬅️ 更新標題
+			silhouetteOptions.innerHTML = '';
+			
+			// 1. 取得擁有有效圖片與寶可夢名稱的卡牌
+			let validCards = flashcardData.filter(item => item.image && item.pokemonName && item.pokemonName !== "未知寶可夢");
+			
+			if (validCards.length < 3) {
+				// 如果數量不足，從原始資料庫中抓取並解析 Card Name
+				validCards = fullRawData.filter(row => row['Card Name'] && row['OCR Image Data']).map(row => {
+					let img = row['OCR Image Data'].split(';;')[0].split('|')[0];
+					if (!img.startsWith("card_images/")) img = "card_images/" + img;
+					
+					let pNameStr = row['Card Name'].split(';;')[0];
+					let pNameParts = pNameStr.split('|');
+					let pName = pNameParts.length > 1 ? pNameParts[1].trim() : pNameParts[0].trim();
+					
+					return { pokemonName: pName, image: img };
+				});
+			}
+
+			// 2. 隨機挑選 3 個「不重複的寶可夢名稱」
+			let shuffled = [...validCards].sort(() => 0.5 - Math.random());
+			let options = [];
+			let nameSet = new Set();
+			
+			for(let i = 0; i < shuffled.length; i++) {
+				if(!nameSet.has(shuffled[i].pokemonName)) {
+					options.push(shuffled[i]);
+					nameSet.add(shuffled[i].pokemonName);
+				}
+				if(options.length === 3) break;
+			}
+
+			// 3. 設定目標圖片與濾鏡
+			currentSilhouetteTarget = options[Math.floor(Math.random() * options.length)];
+			
+			silhouetteImg.style.transition = 'none';
+			silhouetteImg.className = 'is-silhouette';
+			
+			silhouetteImg.src = encodeURI(currentSilhouetteTarget.image.replace(/\\/g, '/'));
+			
+			void silhouetteImg.offsetWidth;
+			silhouetteImg.style.transition = 'filter 1s ease-in-out';
+			
+			silhouetteImg.className = 'is-silhouette';
+
+			// 4. 渲染按鈕（顯示寶可夢名稱）
+			options.sort(() => 0.5 - Math.random());
+			options.forEach(opt => {
+				let btn = document.createElement('button');
+				btn.className = 'silhouette-btn';
+				btn.textContent = opt.pokemonName; // ⬅️ 顯示寶可夢名稱
+				btn.onclick = () => handleSilhouetteGuess(opt.pokemonName, btn); // ⬅️ 傳遞寶可夢名稱作為驗證
+				silhouetteOptions.appendChild(btn);
+			});
+		}
+
+        async function handleSilhouetteGuess(guessedName, btn) {
+			// 鎖定所有按鈕
+			document.querySelectorAll('.silhouette-btn').forEach(b => b.disabled = true);
+			
+			// 移除濾鏡，揭曉寶可夢真面目
+			silhouetteImg.className = ''; 
+
+			// ⬅️ 改為比對 pokemonName
+			if (guessedName === currentSilhouetteTarget.pokemonName) {
+				btn.style.backgroundColor = '#4CAF50'; // 綠色代表正確
+				btn.style.color = 'white';
+				await delay(1000);
+				if (silhouetteRound === 5) {
+					showOverlay("太棒了！挑戰成功 🎉", "#4CAF50", "win");
+				} else {
+					showOverlay("答對了！準備下一關", "#FF9800", "next");
+				}
+			} else {
+				btn.style.backgroundColor = '#cc0000'; // 紅色代表錯誤
+				btn.style.color = 'white';
+				
+				// 標示出哪一個才是正確答案
+				document.querySelectorAll('.silhouette-btn').forEach(b => {
+					if(b.textContent === currentSilhouetteTarget.pokemonName) {
+						b.style.backgroundColor = '#4CAF50';
+						b.style.color = 'white';
+					}
+				});
+
+				await delay(1500);
+				showOverlay("哎呀，猜錯囉！", "#cc0000", "lose");
+			}
+		}
+
+
+        // ================= GAME 3: SHELL GAME =================
+        const shellTitle = document.getElementById('shell-title');
+        const shellEls = [document.getElementById('shell-0'), document.getElementById('shell-1'), document.getElementById('shell-2')];
+        const hiddenCardEl = document.getElementById('hidden-card');
+        const shellCardImg = document.getElementById('shell-card-img');
+        let shellCurrentRound = 1, isShuffling = false, winningShellId = 0, shellSlots = [0, 1, 2];
+        const slotPositions = ['15%', '50%', '85%'];
+
+        function startShellGame() { shellCurrentRound = 1; setupShellRound(); }
+
+        async function setupShellRound() {
+			overlay.style.display = 'none'; isShuffling = true;
+			shellTitle.textContent = `卡牌藏在哪裡？ (Round ${shellCurrentRound}/3)`;
+			shellSlots = [0, 1, 2];
+			
+			shellEls.forEach((shell, idx) => { shell.style.transition = 'none'; shell.style.left = slotPositions[idx]; shell.style.zIndex = 20; shell.classList.remove('lift'); });
+			
+			let randomCard = flashcardData[Math.floor(Math.random() * flashcardData.length)].image;
+			shellCardImg.src = encodeURI(randomCard.replace(/\\/g, '/'));
+
+			/* ⬅️ 新增以下這 4 行程式碼：嚴格控制動畫觸發點 */
+			hiddenCardEl.classList.remove('reveal-mode');
+			hiddenCardEl.classList.remove('capture-mode');
+			void hiddenCardEl.offsetWidth; // 觸發瀏覽器重繪 (Reflow)，強制動畫重新計算
+			hiddenCardEl.classList.add('capture-mode');
+			/* ------------------------------------------------ */
+
+			hiddenCardEl.style.display = 'block';
+			winningShellId = Math.floor(Math.random() * 3);
+			hiddenCardEl.style.left = slotPositions[shellSlots[winningShellId]];
+
+			await delay(500); shellEls[winningShellId].classList.add('lift');
+			await delay(1500); shellEls[winningShellId].classList.remove('lift');
+			await delay(800); hiddenCardEl.style.display = 'none'; 
+			executeShuffle();
+		}
+
+        async function executeShuffle() {
+			let swapCount = shellCurrentRound === 1 ? 7 : (shellCurrentRound === 2 ? 9 : 15);
+			let swapSpeed = shellCurrentRound === 1 ? 400 : (shellCurrentRound === 2 ? 250 : 180);
+			
+			shellEls.forEach(shell => { 
+				shell.style.transition = `left ${swapSpeed}ms ease-in-out`; 
+			});
+
+			for (let i = 0; i < swapCount; i++) {
+				let slotA = Math.floor(Math.random() * 3), slotB = Math.floor(Math.random() * 3);
+				while (slotA === slotB) slotB = Math.floor(Math.random() * 3);
+				let shellA = shellSlots.indexOf(slotA), shellB = shellSlots.indexOf(slotB);
+				
+				// 1. Assign Z-Index (A comes forward, B goes backward)
+				shellEls[shellA].style.zIndex = 25; 
+				shellEls[shellB].style.zIndex = 20;
+
+				// 2. Trigger the parabolic CSS animations
+				shellEls[shellA].style.animation = `hop ${swapSpeed}ms ease-in-out`;
+				shellEls[shellB].style.animation = `dip ${swapSpeed}ms ease-in-out`;
+
+				// 3. Swap the horizontal positions
+				shellSlots[shellA] = slotB; 
+				shellSlots[shellB] = slotA;
+				shellEls[shellA].style.left = slotPositions[slotB]; 
+				shellEls[shellB].style.left = slotPositions[slotA];
+				
+				// 4. Wait for the exact duration of the swap
+				await delay(swapSpeed);
+				
+				// 5. Clear the animation so it can successfully re-trigger on the next loop
+				shellEls[shellA].style.animation = 'none';
+				shellEls[shellB].style.animation = 'none';
+				
+				// Brief pause before the next shuffle step
+				await delay(50);
+			}
+			
+			hiddenCardEl.style.left = slotPositions[shellSlots[winningShellId]];
+			isShuffling = false; 
+		}
+
+        shellEls.forEach(shell => {
+            shell.addEventListener('click', async () => {
+                if (isShuffling) return;
+                isShuffling = true;
+                let clickedId = parseInt(shell.getAttribute('data-id'));
+				
+				// Add reveal-mode so it doesn't trigger the giant capture animation
+				hiddenCardEl.classList.remove('capture-mode');
+				hiddenCardEl.classList.add('reveal-mode'); 
+				
+				hiddenCardEl.style.display = 'block'; 
+                shell.classList.add('lift');
+                await delay(800);
+
+                if (clickedId === winningShellId) {
+                    shellCurrentRound === 3 ? showOverlay("太棒了！挑戰成功 🎉", "#4CAF50", "win") : showOverlay("答對了！準備下一關", "#FF9800", "next");
+                } else {
+                    shellEls[winningShellId].classList.add('lift');
+                    await delay(800); showOverlay("哎呀，猜錯囉！", "#cc0000", "lose");
+                }
+				hiddenCardEl.classList.remove('reveal-mode')
+            });
+        });
+		
+		// ================= IMAGE VIEWER LOGIC =================
+		const imageViewerOverlay = document.getElementById('image-viewer-overlay');
+		const viewerImage = document.getElementById('viewer-image');
+		const closeViewerBtn = document.getElementById('close-viewer-btn');
+
+		// 當使用者點擊主畫面的字卡圖片時，開啟檢視器並載入圖片
+		cardImage.addEventListener('click', () => {
+			viewerImage.src = cardImage.src;
+			imageViewerOverlay.style.display = 'flex';
+		});
+
+		// 點擊右上角 X 按鈕關閉
+		closeViewerBtn.addEventListener('click', () => {
+			imageViewerOverlay.style.display = 'none';
+		});
+
+		// 點擊黑色背景的任何地方也能關閉
+		imageViewerOverlay.addEventListener('click', (e) => {
+			if (e.target === imageViewerOverlay) {
+				imageViewerOverlay.style.display = 'none';
+			}
+		});
+		
+    </script>	
+</body>
+</html>
