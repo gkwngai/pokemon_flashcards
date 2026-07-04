@@ -1,0 +1,1851 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pokémon Flashcards</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        /* ================= BASE STYLES ================= */
+        body {
+            font-family: 'Arial Rounded MT Bold', 'Microsoft JhengHei', sans-serif;
+            background-color: #f2f2f2;
+            background-image: radial-gradient(#ffcb05 15%, transparent 16%), radial-gradient(#ffcb05 15%, transparent 16%);
+            background-size: 60px 60px;
+            background-position: 0 0, 30px 30px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+            overflow-x: hidden;
+        }
+
+        #setup-section, #end-section {
+            background: white;
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            text-align: center;
+            max-width: 650px; 
+            width: 100%;
+            border: 5px solid #3c5aa6;
+        }
+
+        #game-section, #end-section { display: none; }
+
+        /* ================= FLASHCARD UI ================= */
+        #game-section {
+			width: 100%; 
+			max-width: 1400px;
+			flex-direction: row; 
+			align-items: center; 
+			justify-content: center; 
+			gap: 15px; /* ⬅️ REDUCED from 50px to bring elements closer */
+			height: 90vh; 
+			padding: 30px 40px; 
+			box-sizing: border-box;
+			overflow: visible; 
+		}
+        .word-half { 
+			flex: 1; 
+			display: flex; 
+			flex-direction: column; 
+			align-items: center; 
+			justify-content: center;
+			max-width: 600px; 
+			height: 100%; 
+		}
+        .image-half { 
+			flex: 1; 
+			display: flex; 
+			justify-content: center; 
+			align-items: center; 
+			perspective: 1000px; 
+			height: 100%; 
+		}
+        
+        h1 { color: #cc0000; font-size: 32px; margin-bottom: 20px; text-shadow: 2px 2px 0px #ffcb05; }
+
+        .flashcard {
+			background-color: #fff; 
+			border: 8px solid #ffcb05; 
+			border-radius: 30px;
+			width: 100%; 
+			height: 40vh; /* 改用動態高度，取代原本寫死的 400px */
+			max-height: 400px; 
+			display: flex; 
+			align-items: center; 
+			justify-content: center;
+			margin: 20px 0; 
+			box-shadow: inset 0 -5px 15px rgba(0,0,0,0.1), 0 15px 30px rgba(0,0,0,0.2);
+		}
+        .word-display { 
+			font-size: min(8vw, 100px); /* 讓字體可以隨螢幕縮放 */
+			font-weight: bold; 
+			color: #333; 
+			text-align: center; 
+			line-height: 1.2; 
+		}
+
+        .card-wrapper {
+            position: relative; display: none; transform: rotateY(-8deg) rotateX(4deg);
+            transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            box-shadow: 0 25px 50px rgba(0,0,0,0.5), 0 0 30px rgba(255,203,5,0.4);
+            border-radius: 4.5% / 3.2%;
+        }
+        .card-wrapper img { 
+			display: block; 
+			max-height: 85vh; /* ⬅️ INCREASED from 80vh / 45vh to enlarge image size */
+			width: auto; 
+			border-radius: 4.5% / 3.2%; 
+		}
+        
+        .highlight-box {
+            position: absolute; border: 4px solid #ff0000; background-color: rgba(255, 255, 0, 0.4);
+            border-radius: 6px; pointer-events: none; display: none; animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.7); }
+            70% { box-shadow: 0 0 0 15px rgba(255, 0, 0, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0); }
+        }
+		
+		@keyframes hop {
+			0%, 100% { transform: translate(-50%, -50%); }
+			50% { transform: translate(-50%, calc(-50% - 10vmin)); } /* Shell hops up and over */
+		}
+
+		@keyframes dip {
+			0%, 100% { transform: translate(-50%, -50%); }
+			50% { transform: translate(-50%, calc(-50% + 3vmin)); } /* Shell dips slightly under */
+		}
+		
+		/* 🌀 The Capture Illusion Keyframes */
+		@keyframes captureEffect {
+			0%, 33.3% {
+				/* ✨ Card stays giant, clear, and firmly on top layer 30 */
+				transform: translate(-50%, -50%) scale(3.5);
+				opacity: 1;
+				filter: brightness(1) blur(0px);
+				z-index: 30; 
+			}
+			34% {
+				/* 📉 Drop the layer to 15 right as the shrink starts */
+				/* This pushes it behind the shell (20) but keeps it above the background */
+				z-index: 15;
+			}
+			66.6% {
+				transform: translate(-50%, -50%) scale(2);
+				opacity: 1;
+				filter: brightness(1.5) blur(2px);
+				z-index: 15;
+			}
+			100% {
+				transform: translate(-50%, -50%) scale(1);
+				opacity: 0;
+				filter: brightness(3) blur(8px);
+				z-index: 15;
+			}
+		}
+
+        .controls { display: flex; justify-content: space-between; align-items: center; width: 100%; margin-top: 20px; }
+        button {
+            background-color: #3c5aa6; color: white; border: none; padding: 15px 30px;
+            font-size: 24px; border-radius: 15px; cursor: pointer; font-weight: bold;
+            box-shadow: 0 5px 0 #2a4178; user-select: none;
+        }
+        button:active { box-shadow: 0 0 0 #2a4178; transform: translateY(5px); }
+        button:disabled { background-color: #ccc; box-shadow: 0 5px 0 #999; cursor: not-allowed; }
+        #counter { font-size: 28px; font-weight: bold; color: #333; text-shadow: 2px 2px 0px white;}
+
+        .diff-buttons { display: flex; gap: 15px; justify-content: center; flex-wrap: wrap; margin-top: 20px; }
+        .diff-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 160px; height: 100px; font-size: 24px; line-height: 1.4; transition: transform 0.2s; }
+        .diff-btn:hover { transform: scale(1.05); }
+        .diff-btn span { font-size: 14px; font-weight: normal; }
+
+        input[type="file"] { font-size: 16px; padding: 10px; margin-bottom: 20px; margin-top: 10px; border: 2px dashed #ccc; border-radius: 10px; width: 80%; cursor: pointer; }
+
+        @media (orientation: portrait) {
+			#game-section { 
+				flex-direction: column; /* 垂直排列 */
+				gap: 5px; 
+				height: 95vh; /* 佔滿畫面高度 */
+			}
+
+			/* 1. 將圖片區塊移到最上方 */
+			.image-half { 
+				order: 1; 
+				max-height: 55vh; /* 限制圖片區塊高度，讓出空間給下方 */
+			}
+			.card-wrapper img { 
+				max-height: 55vh; /* 確保圖片不超出區域 */
+			}
+
+			/* 2. 將字卡與按鈕移到下方 */
+			.word-half { 
+				order: 2; 
+				justify-content: flex-end; /* 將內容往下推 */
+				max-height: 35vh;
+			}
+
+			/* 縮小標題，節省垂直空間 */
+			.word-half h2 {
+				font-size: 22px !important;
+				margin: 0;
+			}
+
+			/* 3. 大幅縮小字卡高度，確保整體畫面不溢出 */
+			.flashcard { 
+				height: 20vh; 
+				min-height: 120px;
+				margin: 10px 0;
+				border-width: 5px;
+			}
+
+			.word-display { 
+				font-size: 60px; /* 在手機版縮小字體 */
+			}
+
+			/* 縮小按鈕大小，確保按鈕區塊完美塞入畫面底部 */
+			.controls { 
+				margin-top: 10px; 
+			}
+			.controls button { 
+				padding: 12px 20px; 
+				font-size: 20px; 
+			}
+			#counter { 
+				font-size: 22px; 
+			}
+		}
+		
+		
+		/* ================= IMAGE VIEWER OVERLAY ================= */
+		#image-viewer-overlay {
+			display: none; 
+			position: fixed; 
+			top: 0; left: 0; right: 0; bottom: 0;
+			background-color: rgba(0, 0, 0, 0.9);
+			z-index: 10005; /* 確保位於最頂層 */
+			align-items: center;
+			justify-content: center;
+			overflow: auto; /* 允許縮放後滑動查看 */
+		}
+
+		#image-viewer-overlay img {
+			max-width: 100vw;
+			max-height: 100vh;
+			object-fit: contain;
+		}
+
+		#close-viewer-btn {
+			position: fixed;
+			top: 20px;
+			right: 20px;
+			
+			/* 🔴 Completely stripped background, borders, and shadows */
+			background: transparent;
+			border: none;
+			box-shadow: none;
+			padding: 0;
+			
+			/* ⚪ Pure white "X" character */
+			color: #fff; 
+			font-size: 28px; /* Slightly increased to keep it easily clickable */
+			font-weight: bold;
+			cursor: pointer;
+			z-index: 10006;
+			
+			/* 🎯 Ensures clean layout alignment */
+			line-height: 1;
+		}
+		
+		#reference-card {
+			cursor: zoom-in;
+		}
+
+		/* 保護遊戲操作區域，避免雙擊或手指誤觸造成畫面縮放 */
+		#minigame-section, .controls button, .diff-btn, #end-section {
+			touch-action: manipulation;
+		}
+
+        /* ================= MINIGAME SHARED CONTAINER ================= */
+        #minigame-section {
+            display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            width: 100vw; height: 100vh;
+            background-color: #f2f2f2;
+            background-image: radial-gradient(#ffcb05 15%, transparent 16%), radial-gradient(#ffcb05 15%, transparent 16%);
+            background-size: 60px 60px; background-position: 0 0, 30px 30px;
+            flex-direction: column; align-items: center; padding: 2vh 2vw; box-sizing: border-box;
+            z-index: 999; overflow: hidden; 
+        }
+
+        .sub-game-container {
+            width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; display: none;
+        }
+        
+        .minigame-header-style {
+            display: flex; justify-content: center; align-items: center; width: 100%; max-width: 1200px;
+            height: 10vh; min-height: 60px; margin-bottom: 2vh; flex-shrink: 0; background: white;
+            border-radius: 20px; border: 4px solid #3c5aa6; box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+        .minigame-header-style h2 { color: #cc0000; font-size: 32px; margin: 0; }
+
+        #minigame-overlay {
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(255,255,255,0.95); display: flex; flex-direction: column;
+            align-items: center; justify-content: center; z-index: 1000; display: none;
+        }
+		
+		/* ⬅️ 新增這段 CSS */
+		.skip-btn {
+			position: absolute;
+			top: 20px;
+			right: 20px;
+			background-color: #999;
+			color: white;
+			padding: 10px 20px;
+			font-size: 18px;
+			border-radius: 10px;
+			z-index: 1001; /* 確保它顯示在最上層，甚至高於過關結算畫面 */
+			box-shadow: 0 4px 0 #666;
+			border: none;
+			cursor: pointer;
+			font-weight: bold;
+		}
+		.skip-btn:active {
+			box-shadow: 0 0 0 #666;
+			transform: translateY(4px);
+		}
+		
+		/* ================= TIMERS POSITIONING CSS ================= */
+        .game-timer-bottom-right {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            color: #ffcb05;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 20px;
+            font-weight: bold;
+            border: 2px solid #ffcb05;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            z-index: 999; /* 確保永遠在最上層 */
+            pointer-events: none; /* 防止阻擋點擊後方的元素 */
+        }
+
+        @media (orientation: portrait) {
+            .game-timer-bottom-right {
+                bottom: 10px;
+                right: 10px;
+                font-size: 16px;
+                padding: 6px 12px;
+            }
+        }
+
+        /* ================= GAME 1: MEMORY GAME CSS ================= */
+        #memory-header {
+            display: flex; justify-content: space-between; align-items: center; width: 100%;
+            max-width: 1200px; height: 8vh; min-height: 50px; margin-bottom: 1vh; flex-shrink: 0;
+        }
+        #timer { font-size: 28px; font-weight: bold; color: #cc0000; }
+
+        .memory-grid {
+            display: grid; gap: 1.5vmin; width: 100%; max-width: 1400px; flex-grow: 1; min-height: 0;
+            justify-content: center; align-content: center;
+        }
+        @media (orientation: portrait) {
+            .memory-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: repeat(4, minmax(0, 1fr)); }
+        }
+        @media (orientation: landscape) {
+            .memory-grid { grid-template-columns: repeat(12, minmax(0, 1fr)); grid-template-rows: repeat(3, minmax(0, 1fr)); }
+            .memory-card { grid-column: span 2; }
+            .memory-card:nth-child(1) { grid-column: 2 / span 2; }
+            .memory-card:nth-child(12) { grid-column: 2 / span 2; }
+        }
+        .memory-card {
+            position: relative;
+            width: 100%; 
+            height: auto; /* 移除原本可能寫死的 100%，讓高度自動計算 */
+            aspect-ratio: 63 / 88; /* 嚴格鎖定寶可夢卡牌黃金比例 */
+            margin: auto; /* 確保卡片在 Grid 網格內自動置中，不會被拉伸變形 */
+            transform-style: preserve-3d;
+            transition: transform 0.6s cubic-bezier(0.4, 0.2, 0.2, 1);
+            cursor: pointer;
+            box-sizing: border-box;
+        }
+		.memory-card img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            border-radius: 4.5% / 3.2%;
+        }
+        .memory-card.flip { transform: rotateY(180deg); }
+        .card-front, .card-back {
+            width: 100%; height: 100%; position: absolute; backface-visibility: hidden;
+            border-radius: 4.5% / 3.2%; box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        .card-front { transform: rotateY(180deg); background-color: white; border: 2px solid #ffcb05; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+        .card-front img { width: 100%; height: 100%; object-fit: cover; border-radius: 4.5% / 3.2%; }
+        .card-back {
+            background-color: #3c5aa6; border: 2px solid #ffcb05; display: flex; align-items: center; justify-content: center;
+            background-image: repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255,255,255,0.1) 10px, rgba(255,255,255,0.1) 20px);
+        }
+        .card-back::after {
+            content: ""; width: 40px; height: 40px; background: radial-gradient(circle, white 35%, black 35%, black 45%, transparent 45%);
+            background-color: white; border-radius: 50%; border: 4px solid black; box-shadow: inset 0 20px 0 #cc0000;
+        }
+
+        /* ================= GAME 2: SILHOUETTE GAME CSS ================= */
+        .silhouette-arena {
+			flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%;
+		}
+        .silhouette-img-wrapper {
+			position: relative; 
+			height: 40vh; /* 根據螢幕高度動態調整，確保按鈕不會被擠出畫面 */
+			aspect-ratio: 1.6; /* 鎖定為寶可夢卡牌插圖的標準黃金比例 */
+			overflow: hidden; /* 這是裁切的關鍵：超出的卡片文字與數值都會被隱藏 */
+			margin-bottom: 25px;
+			box-shadow: 0 20px 40px rgba(0,0,0,0.4); 
+			border-radius: 12px;
+			border: 5px solid #ffcb05;
+			background-color: #3c5aa6;
+			padding: 0; /* 移除原本的 padding，讓插圖完全貼齊邊緣 */
+		}
+        #silhouette-img {
+			position: absolute;
+			display: block;
+			width: 115%; /* 稍微放大卡片，剛好裁切掉左右兩側多餘的卡片邊框 */
+			max-height: none; /* 移除舊有的高度限制 */
+			
+			/* 精準對齊插圖區域：將卡片往上拉，只露出上半部的插圖 */
+			left: 50%;
+			top: 31.5%; 
+			transform: translate(-50%, -22%);
+			
+			transition: filter 1s ease-in-out;
+			border-radius: 0;
+		}
+		.is-silhouette {
+			filter: grayscale(100%) invert(100%) contrast(300%) brightness(0.8) sepia(100%) hue-rotate(180deg) saturate(400%);
+		}
+        .silhouette-options {
+            display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; width: 100%; max-width: 900px;
+        }
+        .silhouette-btn {
+            background-color: white; color: #333; border: 5px solid #3c5aa6; padding: 20px 40px;
+            font-size: 32px; border-radius: 20px; cursor: pointer; font-weight: bold;
+            box-shadow: 0 8px 0 #2a4178; transition: transform 0.1s, background-color 0.3s;
+            flex: 1; min-width: 250px;
+        }
+        .silhouette-btn:active { transform: translateY(8px); box-shadow: 0 0 0 #2a4178; }
+
+        /* ================= GAME 3: SHELL GAME CSS ================= */
+        .shell-arena { position: relative; width: 100%; max-width: 1000px; flex-grow: 1; display: flex; align-items: center; justify-content: center; }
+        .shell::before { content: ""; position: absolute; top: 50%; left: 0; right: 0; height: 8%; background: #222; transform: translateY(-50%); }
+        .shell::after { content: ""; position: absolute; top: 50%; left: 50%; width: 25%; height: 25%; background: radial-gradient(circle, #fff 40%, #ccc 100%); border: 5px solid #222; border-radius: 50%; transform: translate(-50%, -50%); box-shadow: inset 0 -2px 5px rgba(0,0,0,0.2); }
+        .shell.lift { transform: translate(-50%, calc(-50% - 25vmin)); }
+		.hidden-card {
+			position: absolute; top: 50%; transform: translate(-50%, -50%); width: 15vmin; max-width: 220px;
+			aspect-ratio: 0.71; z-index: 30; display: none; border-radius: 5%; box-shadow: 0 10px 20px rgba(0,0,0,0.3);
+		}
+		.hidden-card.capture-mode {
+			animation: captureEffect 3s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+		}
+		.hidden-card img { width: 100%; height: 100%; object-fit: cover; border-radius: 5%; }
+        .shell {
+			position: absolute; top: 50%; transform: translate(-50%, -50%); width: 35vmin; height: 35vmin;
+			max-width: 320px; max-height: 320px; border-radius: 50%; border: 6px solid #222; cursor: pointer; z-index: 20;
+			
+			background: linear-gradient(to bottom, #ff0000 50%, #ffffff 50%);
+			
+			box-shadow: 0 20px 30px rgba(0,0,0,0.4), inset -10px -10px 20px rgba(0,0,0,0.15);
+			transition: left 0.5s ease-in-out, transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+		}
+		/* 🔥 When revealing, cancel the capture animation and lock size to its base 220px max */
+		.hidden-card.reveal-mode {
+			animation: none !important;
+			transform: translate(-50%, -50%) scale(1) !important;
+			opacity: 1 !important;
+			filter: none !important;
+			z-index: 10; /* Sits behind the lifted shell top piece cleanly */
+		}
+		
+		
+		/* ================= GAME 4: TIMETABLE GAME CSS ================= */
+        .timetable-grid {
+            display: grid;
+            grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
+            grid-template-rows: repeat(var(--rows), minmax(0, 1fr));
+            gap: 0.5vmin;
+            width: 100%;
+            max-width: 1000px;
+            /* ⬅️ 關鍵：限制總高度為視窗高度的 50% - 60%，預留空間給按鈕與標題 */
+            height: 55vh; 
+            min-height: 200px;
+            justify-content: center;
+            align-content: center;
+            margin-bottom: 2vh;
+            background-color: rgba(255,255,255,0.5);
+            padding: 1vmin;
+            border-radius: 15px;
+            border: 4px dashed #ffcb05;
+            overflow: hidden; /* 防止溢出 */
+        }
+        
+        .math-card {
+            width: 100%;
+            height: 100%;
+            /* ⬅️ 關鍵：保持卡牌長寬比，並強制縮小以完全塞入格位 */
+            object-fit: contain; 
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3)); 
+            animation: popIn 0.3s ease-out;
+        }
+
+        /* 手機直向時的微調 */
+        @media (orientation: portrait) {
+            .timetable-grid {
+                height: 50vh; /* 在手機上進一步限制高度 */
+            }
+			.silhouette-options {
+                gap: 10px; 
+                flex-wrap: nowrap; /* 強制不換行 */
+                margin-top: 5px;
+            }
+			/* 2. 大幅縮小按鈕尺寸、字體與邊框 */
+            .silhouette-btn {
+                padding: 10px 5px; /* 縮小內邊距 */
+                font-size: 22px;   /* 縮小字體 */
+                min-width: 0;      /* 移除原本 250px 的限制，允許按鈕縮小 */
+                flex: 1;           /* 讓 3 個按鈕平分畫面寬度 */
+                border-width: 3px;
+                border-radius: 12px;
+                box-shadow: 0 4px 0 #2a4178;
+            }
+
+            .silhouette-btn:active {
+                transform: translateY(4px);
+                box-shadow: 0 0 0 #2a4178;
+            }
+
+            /* 3. 既然按鈕變小了，我們就能把空間還給卡牌網格！ */
+            .timetable-grid {
+                height: 65vh; /* 從原本的 50vh 解放，擴大到 65vh */
+                margin-bottom: 1vh;
+            }
+            
+            /* 同步縮小乘法遊戲的標題，再擠出一點點空間 */
+            #timetable-title {
+                font-size: 20px !important;
+            }
+			
+        }
+
+        @keyframes popIn {
+            0% { transform: scale(0); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+		
+		/* ================= GAME 5: TYPE BATTLE GAME CSS ================= */
+        #battle-container { justify-content: space-between; padding: 2vh 0; }
+        .battle-header { width: 100%; text-align: center; background: white; border: 4px solid #3c5aa6; border-radius: 15px; padding: 10px; box-shadow: 0 5px 15px rgba(0,0,0,0.2); max-width: 800px; margin-bottom: 2vh;}
+        .score-board { display: flex; justify-content: center; align-items: center; font-size: 24px; font-weight: bold; color: #333; }
+        .type-hint { font-size: 25px; color: #666; margin-top: 5px; font-weight: bold; }
+        
+        .battle-hand { display: flex; justify-content: center; gap: 10px; width: 100%; max-width: 900px; height: 25vh; min-height: 120px;}
+        .pc-hand .math-card { filter: brightness(0.5) contrast(1.2) sepia(1) hue-rotate(180deg); pointer-events: none; }
+        
+        .battle-arena { 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            gap: 40px; /* 拉開兩張大卡片的間距 */
+            width: 100%; 
+            height: 42vh; /* 增加競技場的高度區塊 */
+            background: rgba(0,0,0,0.1); 
+            border-radius: 20px; 
+            box-shadow: inset 0 0 20px rgba(0,0,0,0.2); 
+            margin: 2vh 0;
+        }
+
+        .arena-slot { 
+            height: 38vh; /* 讓卡片高度依賴螢幕高度，佔滿競技場 */
+            max-height: 360px; /* 設定最大極限，避免在大螢幕上過度巨大 */
+            aspect-ratio: 63 / 88; /* 鎖定黃金比例，寬度會自動計算 */
+            width: auto;
+            border: 4px dashed #999; 
+            border-radius: 15px; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            position: relative; 
+        }
+
+        .arena-vs { 
+            font-size: 50px; /* 稍微放大 VS 字體以搭配變大的卡牌 */
+            font-weight: bold; 
+            color: #ffcb05; 
+            text-shadow: 0 0 15px red, 3px 3px 0px #333; 
+        }
+        .arena-msg { position: absolute; font-size: 24px; font-weight: bold; color: white; background: rgba(204, 0, 0, 0.9); padding: 5px 15px; border-radius: 10px; white-space: nowrap; z-index: 10; text-shadow: 1px 1px 2px black; animation: popIn 0.3s ease-out;}
+
+        .battle-card { 
+            height: 100%; /* 依據父容器 (25vh) 決定高度 */
+            width: auto; /* 讓寬度依照比例自動計算 */
+            aspect-ratio: 63 / 88; /* 強制鎖定標準寶可夢卡牌比例 */
+            object-fit: contain; 
+            border-radius: 4.5% / 3.2%; 
+            box-shadow: 0 5px 15px rgba(0,0,0,0.4); 
+            cursor: pointer; 
+            transition: transform 0.2s; 
+            animation: popIn 0.3s ease-out; 
+            box-sizing: border-box;
+        }
+        .battle-card:hover { transform: translateY(-10px); }
+        /* 移植記憶遊戲的卡背樣式 */
+        .pc-hand .battle-card { 
+            transform: rotateY(180deg); 
+            background-color: #3c5aa6; 
+            border: 2px solid #ffcb05; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center;
+            background-image: repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255,255,255,0.1) 10px, rgba(255,255,255,0.1) 20px); 
+        }
+        
+        /* 卡背中心的精靈球圖案 */
+        .pc-hand .battle-card::after {
+            content: ""; 
+            width: 40px; 
+            height: 40px; 
+            background: radial-gradient(circle, white 35%, black 35%, black 45%, transparent 45%);
+            background-color: white; 
+            border-radius: 50%; 
+            border: 4px solid black; 
+            box-shadow: inset 0 20px 0 #cc0000;
+        }
+        /* 當卡片被翻開顯示圖片時，隱藏卡背與邊框 */
+        .pc-hand .battle-card[src] { 
+            transform: rotateY(0deg); 
+            background: none; 
+            border: none;
+        }
+        .pc-hand .battle-card[src]::after {
+            display: none;
+        }
+
+        @media (orientation: portrait) {
+            /* 1. 調整標題列比例 */
+            .battle-header { margin-bottom: 1vh; padding: 8px; }
+            .score-board { font-size: 18px; }
+            .score-board h2 { font-size: 22px !important; margin: 0 10px !important; }
+            .type-hint { font-size: 13px; }
+
+            /* 2. 調整手牌區域：取消高度限制，改以寬度為基準 */
+            .battle-hand { 
+                height: auto; 
+                min-height: 0; 
+                gap: 1.5vw; 
+            }
+            
+            /* 3. 調整卡牌：強制 5 張卡牌平分螢幕寬度 */
+            .battle-card { 
+                height: auto; 
+                width: 18.5vw; /* 確保 5 張卡片 + gap 剛好填滿手機寬度 */
+                box-shadow: 0 2px 5px rgba(0,0,0,0.4); 
+            }
+
+            /* 4. 同步縮小卡背上的精靈球圖案，避免在手機上過大 */
+            .pc-hand .battle-card::after {
+                width: 5vw; 
+                height: 5vw; 
+                border-width: 2px;
+                box-shadow: inset 0 2.5vw 0 #cc0000;
+            }
+
+            /* 5. 縮小競技場與中間的 VS 視覺 */
+            .battle-arena { height: 25vh; margin: 1vh 0; gap: 3vw; }
+            .arena-slot { 
+                width: 35vw; 
+                height: calc(35vw * 88 / 63); /* 依賴寬度完美維持 63:88 黃金比例 */
+            }
+            .arena-vs { font-size: 28px; }
+            .arena-msg { font-size: 16px; padding: 5px 10px; }
+        }
+		
+	
+
+    </style>
+</head>
+<body>
+
+    <div id="setup-section">
+        <h1>寶可夢字卡遊戲<br>Pokémon Flashcards</h1>
+        <div id="manual-upload-ui" style="display: none;">
+            <p style="font-size: 18px; color: #555;">請選擇字卡檔案 (Select Excel File):</p>
+            <input type="file" id="file-upload" accept=".xlsx, .xls">
+        </div>
+        <p id="loading-text" style="font-size: 20px; display: none;">檔案載入中... (Loading file...)</p>
+        
+        <div id="difficulty-selection" style="display: none;">
+            <h2 style="color: #333; margin-top: 10px;">請選擇難度 (Select Difficulty)</h2>
+            <div class="diff-buttons">
+                <button class="diff-btn" data-min="1" data-max="2" style="background-color: #4CAF50; box-shadow: 0 5px 0 #388E3C;">簡單<br><span>Easy</span></button>
+                <button class="diff-btn" data-min="3" data-max="4" style="background-color: #FF9800; box-shadow: 0 5px 0 #F57C00;">普通<br><span>Normal</span></button>
+                <button class="diff-btn" data-min="5" data-max="6" style="background-color: #F44336; box-shadow: 0 5px 0 #D32F2F;">困難<br><span>Hard</span></button>
+            </div>
+        </div>
+        <p id="setup-error" style="color: red; font-weight: bold; margin-top: 15px; font-size: 16px;"></p>
+    </div>
+
+    <div id="game-section">
+        <div class="word-half">
+            <h2 style="color: #3c5aa6; margin:0; text-shadow: 2px 2px 0px white; font-size: 32px;">讀讀看這個詞！</h2>
+            <div class="flashcard">
+                <div id="word-display" class="word-display">載入中...</div>
+            </div>
+            <div class="controls">
+                <button id="btn-prev">⬅️ 上一個</button>
+                <div id="counter">1 / 50</div>
+                <button id="btn-next">下一個 ➡️</button>
+            </div>
+        </div>
+        <div class="image-half">
+            <div id="card-wrapper" class="card-wrapper">
+                <img id="reference-card" src="" alt="Pokemon Card">
+                <div id="highlight-box" class="highlight-box"></div>
+            </div>
+        </div>
+    </div>
+	
+	<div id="image-viewer-overlay">
+		<button id="close-viewer-btn">X</button>
+		<img id="viewer-image" src="" alt="Enlarged Card">
+	</div>
+	
+	<div id="end-section">
+        <h1>太棒了！<br>You did it! 🎉</h1>
+        <button onclick="location.reload()" style="background-color: #4CAF50;">再來一次</button>
+    </div>
+
+
+    <div id="minigame-section">
+		<!-- ⬅️ 新增這行：跳過遊戲按鈕 -->
+		<button id="btn-skip-minigame" class="skip-btn">跳過 (Skip) ⏭️</button>
+        
+		<!-- Game 1: Memory Card Game -->
+        <div id="memory-container" class="sub-game-container">
+            <div id="memory-header">
+                <h2 style="color: #3c5aa6; margin:0;">挑戰時間！找找看配對</h2>
+				<div id="memory-timer" class="game-timer-bottom-right">剩餘時間: 60s</div>
+            </div>
+            <div class="memory-grid" id="memory-grid"></div>
+        </div>
+		
+		
+		<!-- Game 2: Silhouette Game -->
+        <div id="silhouette-container" class="sub-game-container">
+            <div class="minigame-header-style">
+                <h2 id="silhouette-title">猜猜看是哪個詞語？ (Round 1/3)</h2>
+            </div>
+            <div class="silhouette-arena">
+                <div class="silhouette-img-wrapper">
+                    <img id="silhouette-img" src="">
+                </div>
+                <div class="silhouette-options" id="silhouette-options">
+                    </div>
+            </div>
+        </div>
+		
+		
+		<!-- Game 3: Shell Game -->
+        <div id="shell-container" class="sub-game-container">
+            <div class="minigame-header-style">
+                <h2 id="shell-title">卡牌藏在哪裡？ (Round 1/3)</h2>
+            </div>
+            <div class="shell-arena" id="shell-arena">
+                <div class="hidden-card" id="hidden-card"><img src="" id="shell-card-img"></div>
+                <div class="shell" id="shell-0" data-id="0"></div>
+                <div class="shell" id="shell-1" data-id="1"></div>
+                <div class="shell" id="shell-2" data-id="2"></div>
+            </div>
+        </div>
+		
+		
+		<!-- Game 4: Times Table (Math Game) -->
+        <div id="timetable-container" class="sub-game-container">
+            <div class="minigame-header-style">
+                <h2 id="timetable-title">九九乘法大挑戰！</h2>
+            </div>
+            
+            <!-- Grid for visual card counting -->
+            <div class="timetable-grid" id="timetable-grid"></div>
+			
+			<div id="timetable-timer" class="game-timer-bottom-right" style="display: none;">剩餘時間: 90s</div>
+            
+            <div class="silhouette-options" id="timetable-options">
+                <!-- Buttons injected via JS -->
+            </div>
+        </div>
+        
+        <div id="minigame-overlay">
+            <h1 id="overlay-msg" style="color: #cc0000; font-size: 40px; text-align:center;"></h1>
+            <button id="btn-next-round" style="background-color: #3c5aa6; display: none;">下一關 (Next Round)</button>
+            <button id="btn-retry-minigame" style="background-color: #FF9800; display: none;">再試一次 (Try Again)</button>
+            <button id="btn-continue-flashcards" style="background-color: #4CAF50; display: none; margin-top: 15px;">繼續字卡 (Continue)</button>
+        </div>
+		
+		
+		<!-- Game 5: Type Battle Game -->
+        <div id="battle-container" class="sub-game-container">
+            <div class="battle-header">
+                <div class="score-board">
+                    <span id="battle-score-pc">電腦: 0</span>
+                    <h2 style="color: #cc0000; margin: 0 20px;">屬性對戰</h2>
+                    <span id="battle-score-player">玩家: 0</span>
+                </div>
+                <div class="type-hint">草 &lt; 火 &lt; 水 &lt; 雷 &lt; 超 &lt; 草</div>
+            </div>
+
+            <!-- 電腦的手牌 (背面) -->
+            <div id="battle-pc-hand" class="battle-hand pc-hand"></div>
+
+            <!-- 對戰擂台 -->
+            <div id="battle-arena" class="battle-arena">
+                <div class="arena-slot" id="arena-pc"></div>
+                <div class="arena-vs" id="arena-vs-text">VS</div>
+                <div class="arena-slot" id="arena-player"></div>
+            </div>
+
+            <!-- 玩家的手牌 -->
+            <div id="battle-player-hand" class="battle-hand"></div>
+        </div>
+    </div>
+
+    
+	
+	
+	
+	
+		
+
+    <script>
+        // ================= CONFIGURATION =================
+        const isOnline = true; 
+        let fullRawData = null; 
+        let flashcardData = [];
+        let currentIndex = 0;
+        let milestonesReached = new Set(); 
+
+        // MINIGAME ROUTER VARIABLES (Now includes Silhouette!)
+        let miniGames = ['memory', 'silhouette', 'shuffle', 'timetable','battle'];
+		//let miniGames = ['memory'];
+        let gameIndex = 0; 
+        let activeMiniGame = ''; 
+		
+		let timetableTimerInterval = null;
+        let timetableTimeLeft = 60;
+
+        // DOM Elements
+        const setupSection = document.getElementById('setup-section');
+        const manualUploadUI = document.getElementById('manual-upload-ui');
+        const fileUpload = document.getElementById('file-upload');
+        const loadingText = document.getElementById('loading-text');
+        const difficultySelection = document.getElementById('difficulty-selection');
+        const setupError = document.getElementById('setup-error');
+        const gameSection = document.getElementById('game-section');
+        const wordDisplay = document.getElementById('word-display');
+        const cardWrapper = document.getElementById('card-wrapper');
+        const cardImage = document.getElementById('reference-card');
+        const highlightBox = document.getElementById('highlight-box');
+        const counterDisplay = document.getElementById('counter');
+        const btnPrev = document.getElementById('btn-prev');
+        const btnNext = document.getElementById('btn-next');
+
+        const minigameSection = document.getElementById('minigame-section');
+        const memoryContainer = document.getElementById('memory-container');
+        const silhouetteContainer = document.getElementById('silhouette-container');
+        const shellContainer = document.getElementById('shell-container');
+		const timetableContainer = document.getElementById('timetable-container');
+		const battleContainer = document.getElementById('battle-container');
+        const overlay = document.getElementById('minigame-overlay');
+        const overlayMsg = document.getElementById('overlay-msg');
+        const btnNextRound = document.getElementById('btn-next-round');
+        const btnRetryMini = document.getElementById('btn-retry-minigame');
+        const btnContinueFlashcards = document.getElementById('btn-continue-flashcards');
+		
+		const btnSkipMinigame = document.getElementById('btn-skip-minigame');
+		
+		// ⬅️ 新增乘法遊戲專用變數
+        let timetableQuestion = 1; // 總計 9 題
+        let timetableAns = 0;
+		
+		// 對戰專用變數
+        let battlePlayerScore = 0;
+        let battlePcScore = 0;
+        let battlePlayerHand = [];
+        let battlePcHand = [];
+        let battleRoundCount = 0;
+        let isBattleAnimating = false;
+		
+		// 屬性相剋表 (Value beats Key) - 草<火<水<雷<超<草
+        const typeBeats = {
+            'Fire': 'Grass',
+            'Water': 'Fire',
+            'Lightning': 'Water',
+            'Psychic': 'Lightning',
+            'Grass': 'Psychic'
+        };
+
+        // ================= SETUP LOGIC =================
+        document.addEventListener('DOMContentLoaded', () => {
+            if (isOnline) {
+                loadingText.style.display = 'block';
+                fetch('./pokemon_flashcards_ocr_master.xlsx')
+                    .then(response => { if (!response.ok) throw new Error('Not found'); return response.arrayBuffer(); })
+                    .then(data => { parseExcelData(data); })
+                    .catch(() => { setupError.innerHTML = "⚠️ 無法載入檔案 (Cannot auto-load file)."; loadingText.style.display = 'none'; });
+            } else {
+                manualUploadUI.style.display = 'block';
+                fileUpload.addEventListener('change', (e) => {
+                    const file = e.target.files[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = function(event) {
+                        try { parseExcelData(event.target.result); } 
+                        catch (err) { setupError.innerHTML = "⚠️ 檔案解析錯誤 (Error parsing file)."; }
+                    };
+                    reader.readAsArrayBuffer(file);
+                });
+            }
+        });
+
+        function parseExcelData(buffer) {
+            const workbook = XLSX.read(new Uint8Array(buffer), { type: 'array' });
+            const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+            fullRawData = XLSX.utils.sheet_to_json(worksheet);
+            manualUploadUI.style.display = 'none';
+            loadingText.style.display = 'none';
+            difficultySelection.style.display = 'block';
+        }
+
+        document.querySelectorAll('.diff-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                processWords(parseInt(btn.getAttribute('data-min')), parseInt(btn.getAttribute('data-max')));
+            });
+        });
+
+        function processWords(minLvl, maxLvl) {
+			let itemsList = fullRawData.map(row => {
+				const level = parseInt(row['Level']);
+				if (isNaN(level) || level < minLvl || level > maxLvl) return null; 
+
+				const ocrData = row['OCR Image Data'] || "";
+				const cardNameData = row['Card Name'] || ""; // ⬅️ 取得新增的 Card Name 欄位
+				
+				const matchOptions = ocrData.split(';;').filter(Boolean);
+				const cardNameOptions = cardNameData.split(';;').filter(Boolean);
+				
+				let chosenIndex = matchOptions.length > 0 ? Math.floor(Math.random() * matchOptions.length) : -1;
+				let chosenMatch = chosenIndex !== -1 ? matchOptions[chosenIndex] : "";
+				let chosenCardName = (chosenIndex !== -1 && chosenIndex < cardNameOptions.length) ? cardNameOptions[chosenIndex] : "";
+				
+				const parts = chosenMatch.split('|');
+				let imagePath = "";
+				let highlight = null;
+				if (parts.length >= 5) {
+					imagePath = parts[0];
+					if (!imagePath.startsWith("card_images/")) imagePath = "card_images/" + imagePath;
+					highlight = { x: parseFloat(parts[1]), y: parseFloat(parts[2]), w: parseFloat(parts[3]), h: parseFloat(parts[4]) };
+				}
+				
+				// ⬅️ 解析出寶可夢名稱 (Card Type | Pokemon Name)
+				let pokemonName = "未知寶可夢";
+				if (chosenCardName) {
+					const cnParts = chosenCardName.split('|');
+					pokemonName = cnParts.length > 1 ? cnParts[1].trim() : cnParts[0].trim();
+				}
+
+				// 將 pokemonName 一併存入物件中
+				return { word: row['Word'], image: imagePath, highlight: highlight, pokemonName: pokemonName };
+			}).filter(item => item !== null && item.word && item.image !== "");
+
+			if (itemsList.length === 0) { setupError.innerHTML = "⚠️ 找不到符合此難度的字卡."; return; }
+
+			for (let i = itemsList.length - 1; i > 0; i--) {
+				const j = Math.floor(Math.random() * (i + 1));
+				[itemsList[i], itemsList[j]] = [itemsList[j], itemsList[i]];
+			}
+
+			flashcardData = itemsList.slice(0, 50);
+			setupSection.style.display = 'none';
+			gameSection.style.display = 'flex'; 
+			currentIndex = 0;
+			milestonesReached.clear();
+			updateCard();
+		}
+
+        function updateCard() {
+            const currentItem = flashcardData[currentIndex];
+            wordDisplay.textContent = currentItem.word;
+            cardImage.style.visibility = 'hidden';
+            highlightBox.style.display = 'none';
+            
+            if (currentItem.image) {
+                cardWrapper.style.display = 'block';
+                cardImage.onload = function() {
+                    cardImage.style.visibility = 'visible';
+                    if (currentItem.highlight && currentItem.highlight.w > 0) {
+                        highlightBox.style.left = currentItem.highlight.x + '%';
+                        highlightBox.style.top = currentItem.highlight.y + '%';
+                        highlightBox.style.width = (currentItem.highlight.w + 1) + '%';
+                        highlightBox.style.height = (currentItem.highlight.h + 1) + '%';
+                        highlightBox.style.display = 'block';
+                    }
+                };
+                //cardImage.src = encodeURI(currentItem.image.replace(/\\/g, '/'));
+				const safeUrl = encodeURI(currentItem.image.replace(/\\/g, '/'));
+				getOrFetchImage(safeUrl).then(localUrl => {
+					cardImage.src = localUrl;
+				});
+				
+            } else {
+                cardWrapper.style.display = 'none';
+            }
+            counterDisplay.textContent = `${currentIndex + 1} / ${flashcardData.length}`;
+            btnPrev.disabled = currentIndex === 0;
+        }
+		
+		// ================= IMAGE VIEWER LOGIC =================
+		const imageViewerOverlay = document.getElementById('image-viewer-overlay');
+		const viewerImage = document.getElementById('viewer-image');
+		const closeViewerBtn = document.getElementById('close-viewer-btn');
+
+		// 當使用者點擊主畫面的字卡圖片時，開啟檢視器並載入圖片
+		cardImage.addEventListener('click', () => {
+			viewerImage.src = cardImage.src;
+			imageViewerOverlay.style.display = 'flex';
+		});
+
+		// 點擊右上角 X 按鈕關閉
+		closeViewerBtn.addEventListener('click', () => {
+			imageViewerOverlay.style.display = 'none';
+		});
+
+		// 點擊黑色背景的任何地方也能關閉
+		imageViewerOverlay.addEventListener('click', (e) => {
+			if (e.target === imageViewerOverlay) {
+				imageViewerOverlay.style.display = 'none';
+			}
+		});
+		
+		
+		// ================= IMAGE CACHE MANAGER (IndexedDB) =================
+        const DB_NAME = 'PokemonAssets';
+        const STORE_NAME = 'Images';
+
+        async function openDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(DB_NAME, 1);
+                request.onupgradeneeded = (e) => e.target.result.createObjectStore(STORE_NAME);
+                request.onsuccess = (e) => resolve(e.target.result);
+                request.onerror = (e) => reject(e.target.error);
+            });
+        }
+
+        async function getOrFetchImage(imgUrl) {
+            try {
+                const db = await openDB();
+                
+                // 1. Check if the image already exists in IndexedDB
+                const blob = await new Promise((resolve) => {
+                    const tx = db.transaction(STORE_NAME, 'readonly');
+                    const req = tx.objectStore(STORE_NAME).get(imgUrl);
+                    req.onsuccess = () => resolve(req.result);
+                    req.onerror = () => resolve(null);
+                });
+
+                if (blob) return URL.createObjectURL(blob);
+
+                // 2. If not cached, fetch from the server and save it
+                const response = await fetch(imgUrl);
+                if (!response.ok) throw new Error('Network response was not ok');
+                const newBlob = await response.blob();
+                
+                const tx = db.transaction(STORE_NAME, 'readwrite');
+                tx.objectStore(STORE_NAME).put(newBlob, imgUrl);
+                
+                return URL.createObjectURL(newBlob);
+            } catch (error) {
+                console.error("Error loading image:", error);
+                return imgUrl; // Fallback to standard URL if fetching fails
+            }
+        }
+
+        // ================= MASTER MINIGAME ROUTER =================
+        btnNext.addEventListener('click', () => {
+            if (currentIndex < flashcardData.length - 1) {
+                currentIndex++;
+                
+                if (currentIndex % 10 === 0 && !milestonesReached.has(currentIndex)) {
+                    milestonesReached.add(currentIndex);
+                    gameSection.style.display = 'none';
+                    
+                    // Route to the next game in the sequence
+                    //activeMiniGame = miniGames[gameIndex % miniGames.length];
+                    //gameIndex++;
+					
+					gameIndex = Math.floor(Math.random() * miniGames.length);
+					activeMiniGame = miniGames[gameIndex];
+                    launchMiniGame(activeMiniGame);
+					miniGames.splice(gameIndex,1)
+					
+                } else {
+                    updateCard();
+                }
+            } else {
+                gameSection.style.display = 'none';
+                document.getElementById('end-section').style.display = 'block';
+            }
+        });
+
+        btnPrev.addEventListener('click', () => {
+            if (currentIndex > 0) { currentIndex--; updateCard(); }
+        });
+		
+		btnRetryMini.addEventListener('click', () => {
+			// 隱藏結算畫面
+			overlay.style.display = 'none';
+
+			// 根據當前的遊戲類型，重新啟動對應的遊戲
+			if (activeMiniGame === 'memory') {
+				initMemoryGame();
+			} else if (activeMiniGame === 'silhouette') {
+				startSilhouetteGame(); 
+			} else if (activeMiniGame === 'shuffle') {
+				startShellGame();
+			} else if (activeMiniGame === 'timetable') {
+				startTimetableGame();
+			} else if (activeMiniGame === 'battle') {
+				startBattleGame(); 
+			}
+		});
+
+        function launchMiniGame(type) {
+            minigameSection.style.display = 'flex';
+            memoryContainer.style.display = 'none';
+            silhouetteContainer.style.display = 'none';
+            shellContainer.style.display = 'none';
+			timetableContainer.style.display = 'none';
+			battleContainer.style.display = 'none';
+            overlay.style.display = 'none';
+
+            if (type === 'memory') {
+                memoryContainer.style.display = 'flex';
+                initMemoryGame();
+            } else if (type === 'silhouette') {
+                silhouetteContainer.style.display = 'flex';
+                startSilhouetteGame();
+            } else if (type === 'shuffle') {
+                shellContainer.style.display = 'flex';
+                startShellGame();
+            } else if (type === 'timetable') {
+                timetableContainer.style.display = 'flex';
+                startTimetableGame();
+            } else if (type === 'battle') { 
+				battleContainer.style.display = 'flex'; 
+				startBattleGame(); 
+			}
+        }
+
+        function showOverlay(msg, color, state) {
+            overlay.style.display = 'flex';
+            overlayMsg.textContent = msg;
+            overlayMsg.style.color = color;
+            btnNextRound.style.display = state === "next" ? 'block' : 'none';
+            btnRetryMini.style.display = state === "lose" ? 'block' : 'none';
+            btnContinueFlashcards.style.display = state === "win" ? 'block' : 'none';
+        }
+
+        btnRetryMini.addEventListener('click', () => {
+            if (activeMiniGame === 'memory') initMemoryGame();
+            else if (activeMiniGame === 'silhouette') startSilhouetteGame(); // Restart Silhouette logic
+            else if (activeMiniGame === 'shuffle') startShellGame();
+			else if (activeMiniGame === 'timetable') startTimetableGame();
+        });
+
+        btnContinueFlashcards.addEventListener('click', () => {
+            minigameSection.style.display = 'none';
+            gameSection.style.display = 'flex';
+            updateCard();
+        });
+
+        // Add Next Round Listener (Used by Shell Game & Silhouette)
+        btnNextRound.addEventListener('click', () => {
+            if (activeMiniGame === 'shell' || activeMiniGame === 'shuffle') {
+                shellCurrentRound++;
+                setupShellRound();
+            } else if (activeMiniGame === 'silhouette') {
+                silhouetteRound++;
+                setupSilhouetteRound();
+            } else if (activeMiniGame === 'timetable') {
+                timetableQuestion++;
+                setupTimetableRound();
+            }
+        });
+
+        const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+		
+		btnSkipMinigame.addEventListener('click', () => {
+			clearInterval(timetableTimerInterval);
+			document.getElementById('timetable-timer').style.display = 'none';
+			
+			// 清除記憶遊戲的計時器，防止在背景執行
+			if (timerInterval) clearInterval(timerInterval);
+			
+			// 解除貝殼遊戲的鎖定狀態
+			isShuffling = false; 
+
+			// 隱藏遊戲區塊與任何開啟的結算畫面
+			document.getElementById('minigame-overlay').style.display = 'none';
+			document.getElementById('minigame-section').style.display = 'none';
+			
+			// 顯示字卡區塊並載入下一張
+			document.getElementById('game-section').style.display = 'flex';
+			updateCard();
+		});
+
+        // ================= GAME 1: MEMORY MATCH =================
+        const memoryGrid = document.getElementById('memory-grid');
+        const timerDisplay = document.getElementById('memory-timer');
+        let hasFlippedCard = false, lockBoard = false, firstCard, secondCard;
+        let matchedPairs = 0, timeRemaining = 60, timerInterval;
+
+        function initMemoryGame() {
+            overlay.style.display = 'none';
+            memoryGrid.innerHTML = '';
+            matchedPairs = 0; timeRemaining = 60;
+            timerDisplay.textContent = `${timeRemaining}s`;
+            timerDisplay.style.color = '#cc0000';
+            [hasFlippedCard, lockBoard, firstCard, secondCard] = [false, false, null, null];
+            
+            let uniqueImages = new Set();
+            fullRawData.forEach(row => {
+                const parts = (row['OCR Image Data'] || "").split(';;')[0]?.split('|');
+                if (parts && parts.length >= 5) {
+                    let img = parts[0];
+                    if (!img.startsWith("card_images/")) img = "card_images/" + img;
+                    uniqueImages.add(img);
+                }
+            });
+
+            let imgArray = Array.from(uniqueImages);
+            for (let i = imgArray.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [imgArray[i], imgArray[j]] = [imgArray[j], imgArray[i]]; }
+            
+            let selectedImages = imgArray.slice(0, 8);
+            while (selectedImages.length < 8) { selectedImages.push(imgArray[selectedImages.length % imgArray.length] || ""); }
+            let gameDeck = [...selectedImages, ...selectedImages];
+            
+            for (let i = gameDeck.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [gameDeck[i], gameDeck[j]] = [gameDeck[j], gameDeck[i]]; }
+
+            gameDeck.forEach(async (imgPath) => {
+                const card = document.createElement('div'); 
+                card.classList.add('memory-card'); 
+                card.dataset.image = imgPath;
+                
+                const safeUrl = encodeURI(imgPath.replace(/\\/g, '/'));
+                const localUrl = await getOrFetchImage(safeUrl); // Fetch from cache
+                
+                card.innerHTML = `<div class="card-front"><img src="${localUrl}"></div><div class="card-back"></div>`;
+                card.addEventListener('click', flipCard);
+                memoryGrid.appendChild(card);
+            });
+
+            clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                timeRemaining--; timerDisplay.textContent = `${timeRemaining}s`;
+                if (timeRemaining <= 10) timerDisplay.style.color = 'red';
+                if (timeRemaining <= 0) { clearInterval(timerInterval); showOverlay("時間到！再試一次", "#cc0000", "lose"); }
+            }, 1000);
+        }
+
+        function flipCard() {
+            if (lockBoard || this === firstCard) return;
+            this.classList.add('flip');
+            if (!hasFlippedCard) { hasFlippedCard = true; firstCard = this; return; }
+            secondCard = this;
+            firstCard.dataset.image === secondCard.dataset.image ? disableCards() : unflipCards();
+        }
+
+        function disableCards() {
+            firstCard.removeEventListener('click', flipCard); secondCard.removeEventListener('click', flipCard);
+            matchedPairs++; [hasFlippedCard, lockBoard, firstCard, secondCard] = [false, false, null, null];
+            if (matchedPairs === 8) { clearInterval(timerInterval); setTimeout(() => showOverlay("太棒了！挑戰成功 🎉", "#4CAF50", "win"), 500); }
+        }
+
+        function unflipCards() {
+            lockBoard = true;
+            setTimeout(() => { firstCard.classList.remove('flip'); secondCard.classList.remove('flip'); [hasFlippedCard, lockBoard, firstCard, secondCard] = [false, false, null, null]; }, 1000);
+        }
+
+
+        // ================= GAME 2: SILHOUETTE (WHO'S THAT POKEMON) =================
+        const silhouetteTitle = document.getElementById('silhouette-title');
+        const silhouetteImg = document.getElementById('silhouette-img');
+        const silhouetteOptions = document.getElementById('silhouette-options');
+        let silhouetteRound = 1;
+        let currentSilhouetteTarget = null;
+
+        function startSilhouetteGame() {
+            silhouetteRound = 1;
+            setupSilhouetteRound();
+        }
+
+        function setupSilhouetteRound() {
+			overlay.style.display = 'none';
+			silhouetteTitle.textContent = `猜猜看是哪個寶可夢？ (Round ${silhouetteRound}/5)`; // ⬅️ 更新標題
+			silhouetteOptions.innerHTML = '';
+			
+			// 1. 取得擁有有效圖片與寶可夢名稱的卡牌
+			let validCards = flashcardData.filter(item => item.image && item.pokemonName && item.pokemonName !== "未知寶可夢");
+			
+			if (validCards.length < 3) {
+				// 如果數量不足，從原始資料庫中抓取並解析 Card Name
+				validCards = fullRawData.filter(row => row['Card Name'] && row['OCR Image Data']).map(row => {
+					let img = row['OCR Image Data'].split(';;')[0].split('|')[0];
+					if (!img.startsWith("card_images/")) img = "card_images/" + img;
+					
+					let pNameStr = row['Card Name'].split(';;')[0];
+					let pNameParts = pNameStr.split('|');
+					let pName = pNameParts.length > 1 ? pNameParts[1].trim() : pNameParts[0].trim();
+					
+					return { pokemonName: pName, image: img };
+				});
+			}
+
+			// 2. 隨機挑選 3 個「不重複的寶可夢名稱」
+			let shuffled = [...validCards].sort(() => 0.5 - Math.random());
+			let options = [];
+			let nameSet = new Set();
+			
+			for(let i = 0; i < shuffled.length; i++) {
+				if(!nameSet.has(shuffled[i].pokemonName)) {
+					options.push(shuffled[i]);
+					nameSet.add(shuffled[i].pokemonName);
+				}
+				if(options.length === 3) break;
+			}
+
+			// 3. 設定目標圖片與濾鏡
+			currentSilhouetteTarget = options[Math.floor(Math.random() * options.length)];
+			
+			silhouetteImg.style.transition = 'none';
+			silhouetteImg.className = 'is-silhouette';
+			
+			//silhouetteImg.src = encodeURI(currentSilhouetteTarget.image.replace(/\\/g, '/'));
+			const safeUrl = encodeURI(currentSilhouetteTarget.image.replace(/\\/g, '/'));
+			getOrFetchImage(safeUrl).then(localUrl => {
+			    silhouetteImg.src = localUrl;
+			});
+			
+			void silhouetteImg.offsetWidth;
+			silhouetteImg.style.transition = 'filter 1s ease-in-out';
+			
+			silhouetteImg.className = 'is-silhouette';
+
+			// 4. 渲染按鈕（顯示寶可夢名稱）
+			options.sort(() => 0.5 - Math.random());
+			options.forEach(opt => {
+				let btn = document.createElement('button');
+				btn.className = 'silhouette-btn';
+				btn.textContent = opt.pokemonName; // ⬅️ 顯示寶可夢名稱
+				btn.onclick = () => handleSilhouetteGuess(opt.pokemonName, btn); // ⬅️ 傳遞寶可夢名稱作為驗證
+				silhouetteOptions.appendChild(btn);
+			});
+		}
+
+        async function handleSilhouetteGuess(guessedName, btn) {
+			// 鎖定所有按鈕
+			document.querySelectorAll('.silhouette-btn').forEach(b => b.disabled = true);
+			
+			// 移除濾鏡，揭曉寶可夢真面目
+			silhouetteImg.className = ''; 
+
+			// ⬅️ 改為比對 pokemonName
+			if (guessedName === currentSilhouetteTarget.pokemonName) {
+				btn.style.backgroundColor = '#4CAF50'; // 綠色代表正確
+				btn.style.color = 'white';
+				await delay(1000);
+				if (silhouetteRound === 5) {
+					showOverlay("太棒了！挑戰成功 🎉", "#4CAF50", "win");
+				} else {
+					showOverlay("答對了！準備下一關", "#FF9800", "next");
+				}
+			} else {
+				btn.style.backgroundColor = '#cc0000'; // 紅色代表錯誤
+				btn.style.color = 'white';
+				
+				// 標示出哪一個才是正確答案
+				document.querySelectorAll('.silhouette-btn').forEach(b => {
+					if(b.textContent === currentSilhouetteTarget.pokemonName) {
+						b.style.backgroundColor = '#4CAF50';
+						b.style.color = 'white';
+					}
+				});
+
+				await delay(1500);
+				showOverlay("哎呀，猜錯囉！", "#cc0000", "lose");
+			}
+		}
+
+
+        // ================= GAME 3: SHELL GAME =================
+        const shellTitle = document.getElementById('shell-title');
+        const shellEls = [document.getElementById('shell-0'), document.getElementById('shell-1'), document.getElementById('shell-2')];
+        const hiddenCardEl = document.getElementById('hidden-card');
+        const shellCardImg = document.getElementById('shell-card-img');
+        let shellCurrentRound = 1, isShuffling = false, winningShellId = 0, shellSlots = [0, 1, 2];
+        const slotPositions = ['15%', '50%', '85%'];
+
+        function startShellGame() { shellCurrentRound = 1; setupShellRound(); }
+
+        async function setupShellRound() {
+			overlay.style.display = 'none'; isShuffling = true;
+			shellTitle.textContent = `卡牌藏在哪裡？ (Round ${shellCurrentRound}/3)`;
+			shellSlots = [0, 1, 2];
+			
+			shellEls.forEach((shell, idx) => { shell.style.transition = 'none'; shell.style.left = slotPositions[idx]; shell.style.zIndex = 20; shell.classList.remove('lift'); });
+			
+			let randomCard = flashcardData[Math.floor(Math.random() * flashcardData.length)].image;
+			//shellCardImg.src = encodeURI(randomCard.replace(/\\/g, '/'));
+			const safeUrl = encodeURI(randomCard.replace(/\\/g, '/'));
+			shellCardImg.src = await getOrFetchImage(safeUrl); // Note: Since the function is already async, we can use await directly
+
+			/* ⬅️ 新增以下這 4 行程式碼：嚴格控制動畫觸發點 */
+			hiddenCardEl.classList.remove('reveal-mode');
+			hiddenCardEl.classList.remove('capture-mode');
+			void hiddenCardEl.offsetWidth; // 觸發瀏覽器重繪 (Reflow)，強制動畫重新計算
+			hiddenCardEl.classList.add('capture-mode');
+			/* ------------------------------------------------ */
+
+			hiddenCardEl.style.display = 'block';
+			winningShellId = Math.floor(Math.random() * 3);
+			hiddenCardEl.style.left = slotPositions[shellSlots[winningShellId]];
+
+			await delay(500); shellEls[winningShellId].classList.add('lift');
+			await delay(1500); shellEls[winningShellId].classList.remove('lift');
+			await delay(800); hiddenCardEl.style.display = 'none'; 
+			executeShuffle();
+		}
+
+        async function executeShuffle() {
+			let swapCount = shellCurrentRound === 1 ? 7 : (shellCurrentRound === 2 ? 9 : 15);
+			let swapSpeed = shellCurrentRound === 1 ? 400 : (shellCurrentRound === 2 ? 250 : 180);
+			
+			shellEls.forEach(shell => { 
+				shell.style.transition = `left ${swapSpeed}ms ease-in-out`; 
+			});
+
+			for (let i = 0; i < swapCount; i++) {
+				let slotA = Math.floor(Math.random() * 3), slotB = Math.floor(Math.random() * 3);
+				while (slotA === slotB) slotB = Math.floor(Math.random() * 3);
+				let shellA = shellSlots.indexOf(slotA), shellB = shellSlots.indexOf(slotB);
+				
+				// 1. Assign Z-Index (A comes forward, B goes backward)
+				shellEls[shellA].style.zIndex = 25; 
+				shellEls[shellB].style.zIndex = 20;
+
+				// 2. Trigger the parabolic CSS animations
+				shellEls[shellA].style.animation = `hop ${swapSpeed}ms ease-in-out`;
+				shellEls[shellB].style.animation = `dip ${swapSpeed}ms ease-in-out`;
+
+				// 3. Swap the horizontal positions
+				shellSlots[shellA] = slotB; 
+				shellSlots[shellB] = slotA;
+				shellEls[shellA].style.left = slotPositions[slotB]; 
+				shellEls[shellB].style.left = slotPositions[slotA];
+				
+				// 4. Wait for the exact duration of the swap
+				await delay(swapSpeed);
+				
+				// 5. Clear the animation so it can successfully re-trigger on the next loop
+				shellEls[shellA].style.animation = 'none';
+				shellEls[shellB].style.animation = 'none';
+				
+				// Brief pause before the next shuffle step
+				await delay(50);
+			}
+			
+			hiddenCardEl.style.left = slotPositions[shellSlots[winningShellId]];
+			isShuffling = false; 
+		}
+
+        shellEls.forEach(shell => {
+            shell.addEventListener('click', async () => {
+                if (isShuffling) return;
+                isShuffling = true;
+                let clickedId = parseInt(shell.getAttribute('data-id'));
+				
+				// Add reveal-mode so it doesn't trigger the giant capture animation
+				hiddenCardEl.classList.remove('capture-mode');
+				hiddenCardEl.classList.add('reveal-mode'); 
+				
+				hiddenCardEl.style.display = 'block'; 
+                shell.classList.add('lift');
+                await delay(800);
+
+                if (clickedId === winningShellId) {
+                    shellCurrentRound === 3 ? showOverlay("太棒了！挑戰成功 🎉", "#4CAF50", "win") : showOverlay("答對了！準備下一關", "#FF9800", "next");
+                } else {
+                    shellEls[winningShellId].classList.add('lift');
+                    await delay(800); showOverlay("哎呀，猜錯囉！", "#cc0000", "lose");
+                }
+				hiddenCardEl.classList.remove('reveal-mode')
+            });
+        });
+		
+		
+		// ================= GAME 4: TIMES TABLE (MATH GAME) =================
+        function startTimetableGame() {
+            timetableQuestion = 1;
+			timetableTimeLeft = 90;
+			
+			const timerEl = document.getElementById('timetable-timer');
+            timerEl.style.display = 'block';
+            timerEl.textContent = `剩餘時間: ${timetableTimeLeft}s`;
+            
+            // ⬇️ 清除可能殘留的計時器並重啟
+            clearInterval(timetableTimerInterval);
+            timetableTimerInterval = setInterval(() => {
+                timetableTimeLeft--;
+                timerEl.textContent = `剩餘時間: ${timetableTimeLeft}s`;
+                
+                if (timetableTimeLeft <= 0) {
+                    clearInterval(timetableTimerInterval);
+                    timerEl.style.display = 'none';
+                    showOverlay("時間到！挑戰失敗 ⏰", "#cc0000", "lose");
+                }
+            }, 1000);			
+			
+            setupTimetableRound();
+        }
+
+        function setupTimetableRound() {
+			if (timetableTimeLeft <= 0) return;
+		
+            overlay.style.display = 'none';
+            
+            // 決定階段 (Stage 1, 2, 3)
+            let stage = Math.ceil(timetableQuestion / 3); 
+            let qInStage = ((timetableQuestion - 1) % 3) + 1; 
+            
+            document.getElementById('timetable-title').textContent = `九九乘法 (Stage ${stage} - 第 ${qInStage}/3 題)`;
+            
+            let A, B;
+            if (stage === 1) {
+                // Stage 1: (2..5) x (2..5)
+                A = Math.floor(Math.random() * 4) + 2;
+                B = Math.floor(Math.random() * 4) + 2;
+				
+            } else if (stage === 2) {
+                // Stage 2: (2..5) x (6..10)
+                A = Math.floor(Math.random() * 4) + 2;
+                B = Math.floor(Math.random() * 4) + 6;
+                // 隨機對調位置，讓小孩適應例如 7x3 或 3x7
+                
+            } else {
+                // Stage 3: (6..10) x (6..10)
+                A = Math.floor(Math.random() * 4) + 6;
+                B = Math.floor(Math.random() * 4) + 6;
+				//if (A > B) [A, B] = [B, A]; 
+            }
+            
+            timetableAns = A * B;
+            
+            
+            // 動態排版設定：判斷目前是直立 (Portrait) 還是橫向 (Landscape)
+            let rows, cols;
+            if (window.matchMedia("(orientation: portrait)").matches) {
+                // 手機直向：列數大於行數
+                rows = Math.max(A, B);
+                cols = Math.min(A, B);
+            } else {
+                // 螢幕橫向：行數大於列數
+                rows = Math.min(A, B);
+                cols = Math.max(A, B);
+            }
+            
+            let grid = document.getElementById('timetable-grid');
+			
+			// ⬅️ 根據卡牌總數量 (timetableAns) 動態調整 Gap，卡越多縫隙越小
+            if (timetableAns > 12) {
+                grid.style.gap = '0.2vmin';
+            } else {
+                grid.style.gap = '0.5vmin';
+            }
+			
+            grid.style.setProperty('--rows', rows);
+            grid.style.setProperty('--cols', cols);
+            grid.innerHTML = '';
+            
+            // 獲取去重複的卡片圖庫
+            let validCards = fullRawData.filter(row => row['OCR Image Data']).map(row => {
+                let img = row['OCR Image Data'].split(';;')[0].split('|')[0];
+                return img.startsWith("card_images/") ? img : "card_images/" + img;
+            });
+            
+            // 隨機打亂並選出 A * B 張「獨立不重複」的卡牌
+            validCards.sort(() => 0.5 - Math.random());
+            let selectedImages = validCards.slice(0, timetableAns);
+            
+            // 如果極端情況圖庫不足（通常不會發生），重複使用圖片
+            while (selectedImages.length < timetableAns) {
+                selectedImages.push(validCards[Math.floor(Math.random() * validCards.length)]);
+            }
+            
+            // 渲染卡牌
+            <!-- selectedImages.forEach(img => { -->
+                <!-- let imgEl = document.createElement('img'); -->
+                <!-- imgEl.className = 'math-card'; -->
+                <!-- imgEl.src = encodeURI(img.replace(/\\/g, '/')); -->
+                <!-- grid.appendChild(imgEl); -->
+            <!-- }); -->
+			
+			selectedImages.forEach(async (img) => {
+                let imgEl = document.createElement('img');
+                imgEl.className = 'math-card';
+                
+                const safeUrl = encodeURI(img.replace(/\\/g, '/'));
+                imgEl.src = await getOrFetchImage(safeUrl);
+                
+                grid.appendChild(imgEl);
+            });
+            
+            // 產生干擾選項 (必須在 +/- 2 內且合理)
+            let pool_raw = [A * (B+1), A * (B-1), (A+1) * B, (A-1) * B, timetableAns - 2, timetableAns - 1, timetableAns + 1, timetableAns + 2];
+			let pool = [...new Set(pool_raw)];
+            pool = pool.filter(n => n > 0); // 排除 0 或負數
+            pool.sort(() => 0.5 - Math.random());
+            
+            // 取正確答案 + 2個隨機錯誤選項
+            let options = [timetableAns, pool[0], pool[1]];
+            options.sort(() => 0.5 - Math.random()); // 打亂順序
+            
+            let optionsContainer = document.getElementById('timetable-options');
+            optionsContainer.innerHTML = '';
+            options.forEach(num => {
+                let btn = document.createElement('button');
+                btn.className = 'silhouette-btn'; // 借用已有的選項按鈕樣式
+                btn.textContent = num;
+                btn.onclick = () => handleTimetableGuess(num, btn);
+                optionsContainer.appendChild(btn);
+            });
+        }
+
+        async function handleTimetableGuess(guessedAns, btn) {
+            document.querySelectorAll('#timetable-options .silhouette-btn').forEach(b => b.disabled = true);
+            
+            if (guessedAns === timetableAns) {
+                btn.style.backgroundColor = '#4CAF50';
+                btn.style.color = 'white';
+                await delay(800);
+                
+                if (timetableQuestion === 9) { // 3個Stage x 3題 = 總共9題
+					clearInterval(timetableTimerInterval);
+                    document.getElementById('timetable-timer').style.display = 'none';
+                    showOverlay("太棒了！挑戰成功 🎉", "#4CAF50", "win");
+                } else {
+                    showOverlay("答對了！下一題", "#FF9800", "next");
+                }
+            } else {
+                btn.style.backgroundColor = '#cc0000';
+                btn.style.color = 'white';
+                
+                // 亮起正確答案
+                document.querySelectorAll('#timetable-options .silhouette-btn').forEach(b => {
+                    if (parseInt(b.textContent) === timetableAns) {
+                        b.style.backgroundColor = '#4CAF50';
+                        b.style.color = 'white';
+                    }
+                });
+				
+				clearInterval(timetableTimerInterval);
+                document.getElementById('timetable-timer').style.display = 'none';
+				
+                await delay(1500);
+                showOverlay("哎呀，算錯囉！", "#cc0000", "lose");
+            }
+        }
+		
+		// ================= GAME 5: TYPE BATTLE =================
+        function startBattleGame() {
+            battlePlayerScore = 0;
+            battlePcScore = 0;
+            battleRoundCount = 0;
+            isBattleAnimating = false;
+            document.getElementById('battle-score-player').textContent = `玩家: 0`;
+            document.getElementById('battle-score-pc').textContent = `電腦: 0`;
+            document.getElementById('arena-player').innerHTML = '';
+            document.getElementById('arena-pc').innerHTML = '';
+            document.getElementById('arena-vs-text').textContent = 'VS';
+            
+            buildBattleDecks();
+        }
+
+        function buildBattleDecks() {
+            // 從主資料庫中精準篩選出符合規則的「寶可夢」卡牌
+            let validCards = fullRawData.map(row => {
+                let ocr = row['OCR Image Data'];
+                let meta = row['Card Name'];
+                if (!ocr || !meta) return null;
+                
+                let metaParts = meta.split(';;')[0].split('|');
+                // 必須是寶可夢，且擁有完整 4 個數據
+                if (metaParts.length < 4 || metaParts[0].trim() !== '寶可夢') return null;
+                
+                let img = ocr.split(';;')[0].split('|')[0];
+                let hp = parseInt(metaParts[2]) || 0;
+                let type = metaParts[3].trim();
+                
+                return { img: img.startsWith("card_images/") ? img : "card_images/" + img, name: metaParts[1], hp: hp, type: type };
+            }).filter(item => item !== null && item.hp > 0 && Object.keys(typeBeats).includes(item.type));
+
+            // 打亂後隨機派發 5 張給玩家，5 張給電腦
+            validCards.sort(() => 0.5 - Math.random());
+            battlePlayerHand = validCards.slice(0, 5);
+            battlePcHand = validCards.slice(5, 10);
+            
+            renderBattleHands();
+        }
+
+        function renderBattleHands() {
+            const playerHandDiv = document.getElementById('battle-player-hand');
+            const pcHandDiv = document.getElementById('battle-pc-hand');
+            playerHandDiv.innerHTML = '';
+            pcHandDiv.innerHTML = '';
+            
+            // 渲染玩家手牌
+            <!-- battlePlayerHand.forEach((card, idx) => { -->
+                <!-- let imgEl = document.createElement('img'); -->
+                <!-- imgEl.className = 'battle-card'; -->
+                <!-- imgEl.src = encodeURI(card.img.replace(/\\/g, '/')); -->
+                <!-- imgEl.onclick = () => playBattleRound(idx); -->
+                <!-- playerHandDiv.appendChild(imgEl); -->
+            <!-- }); -->
+			
+			battlePlayerHand.forEach(async (card, idx) => {
+				let imgEl = document.createElement('img');
+				imgEl.className = 'battle-card';
+				
+				const safeUrl = encodeURI(card.img.replace(/\\/g, '/'));
+				imgEl.src = await getOrFetchImage(safeUrl);
+				
+				imgEl.onclick = () => playBattleRound(idx);
+				playerHandDiv.appendChild(imgEl);
+			});
+			
+            
+            // 渲染電腦手牌 (以背面顯示，用 div 假裝)
+            battlePcHand.forEach((card, idx) => {
+                let divEl = document.createElement('div');
+                divEl.className = 'battle-card';
+                // ⬅️ 已移除手動設定 width 的代碼，完全交由 CSS 處理比例
+                pcHandDiv.appendChild(divEl);
+            });
+        }
+
+        async function playBattleRound(playerIdx) {
+            if (isBattleAnimating) return;
+            isBattleAnimating = true;
+            
+            const arenaP = document.getElementById('arena-player');
+            const arenaC = document.getElementById('arena-pc');
+
+            // ⬅️ 變更點 1：在玩家打出「下一張牌」的瞬間，才清理上一回合留在競技場的卡牌
+            arenaP.innerHTML = '';
+            arenaC.innerHTML = '';
+            document.getElementById('arena-vs-text').textContent = 'VS';
+
+            // 1. 抽取卡片
+            const pCard = battlePlayerHand[playerIdx];
+            const pcIdx = Math.floor(Math.random() * battlePcHand.length);
+            const cCard = battlePcHand[pcIdx];
+            
+            // 2. 移除手牌資料與畫面
+            battlePlayerHand.splice(playerIdx, 1);
+            battlePcHand.splice(pcIdx, 1);
+            renderBattleHands();
+			
+            const pUrl = await getOrFetchImage(encodeURI(pCard.img.replace(/\\/g, '/')));
+			const cUrl = await getOrFetchImage(encodeURI(cCard.img.replace(/\\/g, '/')));
+			
+            // 3. 在競技場顯示出戰卡片
+            <!-- arenaP.innerHTML = `<img src="${encodeURI(pCard.img.replace(/\\/g, '/'))}" class="math-card">`; -->
+			arenaP.innerHTML = `<img src="${pUrl}" class="math-card">`;
+			            
+            // 電腦出牌動畫 (先放背卡，再翻轉載入圖片)
+            <!-- arenaC.innerHTML = `<img src="${encodeURI(cCard.img.replace(/\\/g, '/'))}" class="math-card" style="animation: popIn 0.5s ease-out;">`; -->
+			arenaC.innerHTML = `<img src="${cUrl}" class="math-card" style="animation: popIn 0.5s ease-out;">`;
+            
+            await delay(1000); // 雙方卡牌展示的懸念時間
+            
+            // 4. 勝負判斷
+            let pWin = false, cWin = false, reason = "";
+            
+            if (typeBeats[pCard.type] === cCard.type) {
+                pWin = true; reason = "屬性克制！";
+            } else if (typeBeats[cCard.type] === pCard.type) {
+                cWin = true; reason = "屬性劣勢！";
+            } else {
+                if (pCard.hp > cCard.hp) {
+                    pWin = true; reason = "HP 勝出！";
+                } else if (cCard.hp > pCard.hp) {
+                    cWin = true; reason = "HP 敗陣！";
+                } else {
+                    reason = "勢均力敵 (平手)";
+                }
+            }
+            
+            // 5. 更新分數與顯示結果
+            document.getElementById('arena-vs-text').innerHTML = `<div class="arena-msg">${reason}</div>`;
+            
+            if (pWin) {
+                battlePlayerScore++;
+                arenaC.children[0].style.filter = "grayscale(100%) brightness(0.5)"; // 敗者變暗
+            } else if (cWin) {
+                battlePcScore++;
+                arenaP.children[0].style.filter = "grayscale(100%) brightness(0.5)";
+            }
+            
+            document.getElementById('battle-score-player').textContent = `玩家: ${battlePlayerScore}`;
+            document.getElementById('battle-score-pc').textContent = `電腦: ${battlePcScore}`;
+            
+            battleRoundCount++;
+            
+            // ⬅️ 變更點 2：移除 await delay(3000) 以及清空 arena 的邏輯，讓卡牌永久停留在場上
+            
+            // 6. 結算遊戲
+            if (battleRoundCount >= 5) {
+                // 如果是最後一局，保留短暫的 1.5 秒讓玩家看最後的勝負結果，接著彈出結算畫面
+                await delay(1500); 
+                if (battlePlayerScore > battlePcScore) {
+                    showOverlay(`獲勝！ (${battlePlayerScore} - ${battlePcScore})`, "#4CAF50", "win");
+                } else if (battlePcScore > battlePlayerScore) {
+                    showOverlay(`落敗！ (${battlePlayerScore} - ${battlePcScore})`, "#cc0000", "lose");
+                } else {
+                    showOverlay("平局！ 再來一場", "#FF9800", "win");
+                }
+            } 
+            
+            // ⬅️ 變更點 3：無論是否為最後一局，只要計分完成，就立刻解除鎖定，允許玩家馬上點擊下一張手牌
+            isBattleAnimating = false;
+        }
+		
+    </script>	
+</body>
+</html>
