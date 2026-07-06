@@ -501,8 +501,16 @@
         .math-card {
             width: 100%;
             height: 100%;
-            /* ⬅️ 關鍵：保持卡牌長寬比，並強制縮小以完全塞入格位 */
+            
+            /* ⬅️ 關鍵修復：強迫圖片遵守網格的寬高限制，防止撐破外框 */
+            min-width: 0;  
+            min-height: 0; 
+            
+            /* ⬅️ 移除 img 標籤預設的底部幽靈空白 */
+            display: block; 
+            
             object-fit: contain; 
+            margin: auto;
             filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3)); 
             animation: popIn 0.3s ease-out;
         }
@@ -1253,17 +1261,23 @@
             
             for (let i = gameDeck.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [gameDeck[i], gameDeck[j]] = [gameDeck[j], gameDeck[i]]; }
 
-            gameDeck.forEach(async (imgPath) => {
+            gameDeck.forEach((imgPath) => {
+                // 1. 先建立卡片外框與正反面結構
                 const card = document.createElement('div'); 
                 card.classList.add('memory-card'); 
                 card.dataset.image = imgPath;
-                
-                const safeUrl = encodeURI(imgPath.replace(/\\/g, '/'));
-                const localUrl = await getOrFetchImage(safeUrl); // Fetch from cache
-                
-                card.innerHTML = `<div class="card-front"><img src="${localUrl}"></div><div class="card-back"></div>`;
+                card.innerHTML = `<div class="card-front"><img src=""></div><div class="card-back"></div>`;
                 card.addEventListener('click', flipCard);
+                
+                // 2. ⚡ 關鍵：在圖片下載前，就先按照洗牌好的順序把卡片塞進網格中！
                 memoryGrid.appendChild(card);
+                
+                // 3. 在背景非同步獲取圖片，獲取完成後再替換 src
+                const safeUrl = encodeURI(imgPath.replace(/\\/g, '/'));
+                getOrFetchImage(safeUrl).then(localUrl => {
+                    const imgEl = card.querySelector('.card-front img');
+                    if (imgEl) imgEl.src = localUrl;
+                });
             });
 
             clearInterval(timerInterval);
