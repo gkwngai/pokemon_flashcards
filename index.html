@@ -485,17 +485,20 @@
             gap: 0.5vmin;
             width: 100%;
             max-width: 1000px;
-            /* ⬅️ 關鍵：限制總高度為視窗高度的 50% - 60%，預留空間給按鈕與標題 */
             height: 55vh; 
             min-height: 200px;
-            justify-content: center;
-            align-content: center;
+            
+            /* ⚡ 關鍵修復：改為 stretch 強制列高平分整個高度，並讓卡片在自己的格子內置中 */
+            align-content: stretch; 
+            justify-items: center;
+            align-items: center;
+            
             margin-bottom: 2vh;
             background-color: rgba(255,255,255,0.5);
             padding: 1vmin;
             border-radius: 15px;
             border: 4px dashed #ffcb05;
-            overflow: hidden; /* 防止溢出 */
+            overflow: hidden; 
         }
         
         .math-card {
