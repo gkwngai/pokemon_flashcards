@@ -478,7 +478,7 @@
 		
 		
 		/* ================= GAME 4: TIMETABLE GAME CSS ================= */
-        .timetable-grid {
+       .timetable-grid {
             display: grid;
             grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
             grid-template-rows: repeat(var(--rows), minmax(0, 1fr));
@@ -488,30 +488,36 @@
             height: 55vh; 
             min-height: 200px;
             
-            /* ⚡ 關鍵修復：改為 stretch 強制列高平分整個高度，並讓卡片在自己的格子內置中 */
+            /* 讓子容器完美填滿每個網格 */
             align-content: stretch; 
-            justify-items: center;
-            align-items: center;
+            justify-items: stretch;
+            align-items: stretch;
             
             margin-bottom: 2vh;
             background-color: rgba(255,255,255,0.5);
             padding: 1vmin;
             border-radius: 15px;
             border: 4px dashed #ffcb05;
-            overflow: hidden; 
         }
-        
-        .math-card {
+		
+		/* ⚡ 新增的容器：強迫 Safari 乖乖遵守網格比例，不被圖片尺寸影響 */
+        .math-card-wrapper {
+            position: relative;
             width: 100%;
             height: 100%;
-            
-            /* ⬅️ 關鍵修復：強迫圖片遵守網格的寬高限制，防止撐破外框 */
-            min-width: 0;  
-            min-height: 0; 
-            
-            /* ⬅️ 移除 img 標籤預設的底部幽靈空白 */
-            display: block; 
-            
+            min-width: 0;
+            min-height: 0;
+        }
+        
+        /* ⚡ 隔離後的卡牌：使用絕對定位，完美貼合容器且絕對不撐破網格 */
+        .math-card {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            width: 100%;
+            height: 100%;
             object-fit: contain; 
             margin: auto;
             filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3)); 
@@ -1633,21 +1639,24 @@
                 <!-- grid.appendChild(imgEl); -->
             <!-- }); -->
 			
-			// ✅ 修正後的寫法：加入透明佔位圖防止 WebKit 網格塌陷
+			// ✅ 終極修復：加入 Wrapper 容器，將圖片與網格計算徹底隔離
             selectedImages.forEach((img) => {
+                // 1. 建立網格的直接子元素 (沒有原始尺寸的 DIV)
+                let wrapperEl = document.createElement('div');
+                wrapperEl.className = 'math-card-wrapper';
+                
+                // 2. 建立卡牌圖片
                 let imgEl = document.createElement('img');
                 imgEl.className = 'math-card';
+                imgEl.src = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"; // 繼續使用透明圖佔位
                 
-                // ⚡ 關鍵修復：給予一個 1x1 的透明預設圖片，強制 Safari 分配網格空間
-                imgEl.src = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+                // 3. 將圖片放入 Wrapper，再將 Wrapper 放入網格
+                wrapperEl.appendChild(imgEl);
+                grid.appendChild(wrapperEl);
                 
-                // 1. 先 Append 佔位
-                grid.appendChild(imgEl);
-                
-                // 2. 接著在背景向 IndexedDB 或網路請求圖片
+                // 4. 背景載入真實圖片
                 const safeUrl = encodeURI(img.replace(/\\/g, '/'));
                 getOrFetchImage(safeUrl).then(localUrl => {
-                    // 3. 圖片準備好後，無縫替換透明圖
                     imgEl.src = localUrl;
                 });
             });
